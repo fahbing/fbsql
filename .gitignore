@@ -4,3 +4,6 @@
 #build folder
 */bin/*
 */obj/*
+
+#log files
+fbsqlplay/test/*.log

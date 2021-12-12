@@ -1,0 +1,7 @@
+{
+  "placeholders": {
+    "_server_": ".",
+    "_instance_": "\\DEV2019",
+    "_dbName_": "ScriptTest"
+  }
+}
