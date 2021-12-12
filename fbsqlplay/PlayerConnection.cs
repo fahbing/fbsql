@@ -48,7 +48,8 @@ namespace Fahbing.Sql
     /// <summary>
     /// Opens the connection to the database.
     /// </summary>
-    /// <param name="connectionString"></param>
+    /// <param name="connectionString">A connection string to establish the 
+    /// connection.</param>
     /// <exception cref="ApplicationException"></exception>
     public override void Connect(string connectionString)
     {
