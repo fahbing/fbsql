@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "fbsqlplay": {
+      "commandName": "Project",
+      "commandLineArgs": "\"..\\..\\..\\test\\database.xss\" /c:\"..\\..\\..\\test\\config.json\" /l:\"..\\..\\..\\test\" /a /?"
+    }
+  }
+}
