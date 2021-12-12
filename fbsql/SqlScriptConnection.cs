@@ -1,7 +1,7 @@
 ﻿using System;
 
 
-/// <created>2021-12-12</created>
+/// 2021-12-12 - created
 
 namespace Fahbing.Sql
 {
