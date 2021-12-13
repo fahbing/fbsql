@@ -7,3 +7,6 @@
 
 #log files
 fbsqlplay/test/*.log
+
+#generated .xss files (Xml Sql Script)
+*.xss
