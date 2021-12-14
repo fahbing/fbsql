@@ -1,7 +1,7 @@
 ﻿using System;
 
 
-/// 2021-12-12 - created
+/// 2021-12-12 - created for .NET Standard 2.0
 
 namespace Fahbing.Sql
 {

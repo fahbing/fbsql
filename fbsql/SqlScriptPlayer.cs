@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 
 
 /// 2017-05-15 - created
+/// 2021-12-12 - porting to .NET Standard 2.0
 
 namespace Fahbing.Sql
 {
@@ -413,7 +414,7 @@ namespace Fahbing.Sql
     /// <param name="fileName">The path of the file to load.</param>
     public void LoadFromXmlFile(string fileName)
     {
-      ScriptCmds.loadFromXmlFile(fileName);
+      ScriptCmds.LoadFromXmlFile(fileName);
     }
 
     /// <summary>
