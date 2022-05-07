@@ -35,12 +35,21 @@ namespace Fahbing.Sql
     /// </summary>
     /// <exception cref="ApplicationException">Throws an exception when no 
     /// transaction is active.</exception>
+    /// <remarks>Transaction.Commit() and Transaction.Rollback() used the 
+    /// connection timeout (default is 15 seconds). In large scripts with 
+    /// many changes, this has resulted in a timeout error during commit.
+    /// </remarks>
     public override void Commit()
     {
       if (Transaction == null)
         throw new ApplicationException("No transaction is active.");
 
-      Transaction.Commit();
+      Command.CommandText = "COMMIT";
+      Command.CommandTimeout = Timeout;
+      Command.Transaction = Transaction;
+
+      Command.ExecuteNonQuery();
+      //Transaction.Commit();
 
       Transaction = null;
     }
@@ -77,7 +86,6 @@ namespace Fahbing.Sql
       }
       else
         Connection.ConnectionString = parameters[1];
-
 
       Connection.Open();
 
@@ -211,12 +219,21 @@ namespace Fahbing.Sql
     /// Executes a rollback and finished the running transaction.
     /// </summary>
     /// <exception cref="ApplicationException"></exception>
+    /// <remarks>Transaction.Commit() and Transaction.Rollback() used the 
+    /// connection timeout (default is 15 seconds). In large scripts with 
+    /// many changes, this has resulted in a timeout error during commit.
+    /// </remarks>
     public override void Rollback()
     {
       if (Transaction == null)
         throw new ApplicationException("No transaction is active.");
 
-      Transaction.Rollback();
+      Command.CommandText = "ROLLBACK";
+      Command.CommandTimeout = Timeout;
+      Command.Transaction = Transaction;
+
+      Command.ExecuteNonQuery();
+      //Transaction.Rollback();
 
       Transaction = null;
     }
