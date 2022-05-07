@@ -1,7 +1,7 @@
-﻿using System;
+﻿using Fahbing.Sql;
+using System;
 using System.IO;
 using System.Reflection;
-using Fahbing.Sql;
 
 
 /// 2017-05-15 - created
@@ -20,6 +20,10 @@ namespace Fahbing
     {
       /// <summary></summary>
       public bool Alarm;
+      /// <summary></summary>
+      public bool Build;
+      /// <summary></summary>
+      public string BuildFile;
       /// <summary>The configuration file path. A configuration file is a JSON 
       /// file with a "fbSqlScript" property that contains the configuration 
       /// object for this program.</summary>
@@ -32,6 +36,8 @@ namespace Fahbing
       public string LogFile;
       /// <summary></summary>
       public int MonInterval;
+      /// <summary></summary>
+      public bool ReducedOutput;
       /// <summary></summary>
       public bool ShowHelp;
       /// <summary></summary>
@@ -93,6 +99,51 @@ namespace Fahbing
 
 
     /// <summary>
+    /// Creates an XML file version of a folder script.
+    /// </summary>
+    /// <param name="sourceFolder"></param>
+    /// <param name="destFile"></param>
+    /// <param name="logFileName"></param>
+    private static void BuildFile(string sourceFolder,
+                                  string destFile,
+                                  string logFileName)
+    {
+      try
+      {
+        Console.WriteLine($"\nload script from {sourceFolder}.");
+        Log(logFileName, $"\nload script from {sourceFolder}.");
+
+        SqlTree script = new();
+
+        script.LoadFromDirectory(sourceFolder, (type, path) =>
+        {
+          if (type == SqlTreeItemType.batch)
+          {
+            Console.WriteLine($"load batch: {path}");
+            Log(logFileName, $"load batch: {path}");
+          }
+          else
+          {
+            Console.WriteLine($"load step:  {path}");
+            Log(logFileName, $"load step:  {path}");
+          }
+        });
+
+        Console.WriteLine($"\nwrite script to  {destFile}.");
+        Log(logFileName, $"\nwrite script to  {destFile}.");
+
+        script.SaveToXmlFile(destFile);
+
+        Console.WriteLine("\nfinish");
+        Log(logFileName, "\nfinish");
+      }
+      catch (Exception exception)
+      {
+        WriteError(exception.Message, logFileName);
+      }
+    }
+
+    /// <summary>
     /// Evaluates the command line arguments and returns them in an <see 
     /// cref="CommandLineArgs"/> struct.
     /// </summary>
@@ -104,11 +155,14 @@ namespace Fahbing
       CommandLineArgs result;
 
       result.Alarm = false;
+      result.Build = false;
+      result.BuildFile = "";
       result.ConfigFile = "";
       result.ConfigJPath = "$";
       result.DeleteLog = false;
       result.LogFile = "";
       result.MonInterval = 0;
+      result.ReducedOutput = false;
       result.ShowHelp = false;
       result.ScriptFile = "";
       result.SilentMode = false;
@@ -138,6 +192,10 @@ namespace Fahbing
                          + DateTime.Now.ToString("yyyy_MM_dd_HH_mm_ss_fff")
                          + ".log";
         else
+        if (argument.Equals("/r", StringComparison.OrdinalIgnoreCase)
+         || argument.Equals("-r", StringComparison.OrdinalIgnoreCase))
+          result.ReducedOutput = true;
+        else
         if (argument.Equals("/s", StringComparison.OrdinalIgnoreCase)
          || argument.Equals("-s", StringComparison.OrdinalIgnoreCase))
           result.SilentMode = true;
@@ -161,6 +219,17 @@ namespace Fahbing
          || argument.Equals("-a", StringComparison.OrdinalIgnoreCase))
           result.Alarm = true;
         else
+        if (argument.Equals("/b", StringComparison.OrdinalIgnoreCase)
+         || argument.Equals("-b", StringComparison.OrdinalIgnoreCase))
+          result.Build = true;
+        else
+        if (argument.StartsWith("/b:", StringComparison.OrdinalIgnoreCase)
+         || argument.StartsWith("-b:", StringComparison.OrdinalIgnoreCase))
+        {
+          result.Build = true;
+          result.BuildFile = argument.Substring(3);
+        }
+        else
         if (argument.Equals("/d", StringComparison.OrdinalIgnoreCase)
          || argument.Equals("-d", StringComparison.OrdinalIgnoreCase))
           result.DeleteLog = true;
@@ -177,6 +246,9 @@ namespace Fahbing
         else
           result.ScriptFile = argument;
       }
+
+      if (result.Build && result.BuildFile == "")
+        result.BuildFile = Path.Combine(result.ScriptFile, "script.xss");
 
       return result;
     }
@@ -203,23 +275,28 @@ namespace Fahbing
     /// value. Used in <see cref="EventType.cmdStart" />, <see 
     /// cref="EventType.cmdEnd" />,<see cref="EventType.scriptStart" /> and 
     /// <see cref="EventType.scriptCmd" />.</param>
-    private static void HandlePlayerAction(EventType type, string text, long value)
+    private static void HandlePlayerAction(EventType type,
+                                           string text,
+                                           long value)
     {
       switch (type)
       {
         case EventType.cmdEnd:
-          lock (LockObject)
-          {
-            WriteComment($"elapsed time for command: {text}"
-                       , Arguments.LogFile);
-            Log(Arguments.LogFile, "");
-            Console.WriteLine();
-          }
+            lock (LockObject)
+            {
+              WriteComment($"elapsed time for command: {text}"
+                         , Arguments.LogFile, Arguments.ReducedOutput);
+              Log(Arguments.LogFile, "");
+              
+              if (!Arguments.ReducedOutput)
+                Console.WriteLine();
+            }
           break;
         case EventType.cmdStart:
           WriteTreePath("cmd", "#" + (++value).ToString().PadLeft(3, '0')
                       , Arguments.LogFile);
-          WriteCommand(text, Arguments.LogFile);
+          WriteCommand(text, Arguments.LogFile, Arguments.ReducedOutput);
+
           break;
         case EventType.comment:
           WriteComment(text, Arguments.LogFile);
@@ -234,7 +311,8 @@ namespace Fahbing
           WriteError(text, Arguments.LogFile);
           break;
         case EventType.message:
-          WriteMessage(text, Arguments.LogFile);
+          WriteMessage(text, Arguments.LogFile, Arguments.ReducedOutput);
+
           break;
         case EventType.newBatch:
           WriteTreePath("batch", text, Arguments.LogFile);
@@ -275,8 +353,8 @@ namespace Fahbing
     private static void Help()
     {
       Console.WriteLine();
-      Console.WriteLine("   FBSQLScriptPlayer scriptPath /c:cfgFile /p:cfgJsonPath /m:int32 /l[:dir|file]");
-      Console.WriteLine("                     /a /d /s");
+      Console.WriteLine("   fbsqlplay scriptPath /c:cfgFile /p:cfgJsonPath /m:int32 /l[:dir|file]");
+      Console.WriteLine("             /a /d /s");
       Console.WriteLine();
       Console.WriteLine("   /a                Play sound after script run.");
       Console.WriteLine("   /c:cfgFile        Name incl. path of the JSON formated configuration file.");
@@ -290,12 +368,22 @@ namespace Fahbing
       Console.WriteLine("                     The default is \"$\".");
       Console.WriteLine("   /s                The script runs in silent mode.");
       Console.WriteLine();
-      Console.WriteLine("   FBSQLScriptPlayer scriptFolder /b[:filename]");
+      Console.WriteLine("   fbsqlplay scriptFolder /b[:fileName] /l[:dir|file] /a");
       Console.WriteLine();
       Console.WriteLine("   /b[:fileName]     Builds a script file from a folder script. The default file ");
       Console.WriteLine("                     name is \"script.xss\" in the script folder.");
       Console.WriteLine();
       Console.WriteLine(new string('-', 80));
+    }
+
+    /// <summary>
+    /// Deletes the log file if it already exists.
+    /// </summary>
+    /// <param name="logFileName">The log file name.</param>
+    private static void InitLogFile(string logFile)
+    {
+      if (File.Exists(logFile))
+        File.Delete(logFile);
     }
 
     /// <summary>
@@ -429,7 +517,6 @@ namespace Fahbing
         value = "-- " + value;
 
         WriteLine(value, ActionColor);
-        ResetColors();
         Log(logFileName, value);
       }
     }
@@ -447,7 +534,6 @@ namespace Fahbing
       {
         Write($"-- {name}: ", CommandColor);
         WriteLine(value, ArgumentColor);
-        ResetColors();
         Log(logFileName, $"-- {name}: {value}");
       }
     }
@@ -461,20 +547,32 @@ namespace Fahbing
     {
       WriteComment($"command line arguments", arguments.LogFile);
       WriteArgument("script path", arguments.ScriptFile, arguments.LogFile);
-      WriteArgument("config file", arguments.ConfigFile, arguments.LogFile);
-      WriteArgument("config path", arguments.ConfigJPath, arguments.LogFile);
+
+      if (arguments.Build)
+      {
+        WriteArgument("build file", arguments.BuildFile, arguments.LogFile);
+      }
+      else
+      {
+        WriteArgument("config file", arguments.ConfigFile, arguments.LogFile);
+        WriteArgument("config path", arguments.ConfigJPath, arguments.LogFile);
+      }
+
       WriteArgument("log file", arguments.LogFile, arguments.LogFile);
 
       if (arguments.Alarm)
         WriteArgument("play sound is finish", arguments.Alarm.ToString().ToLower()
                     , arguments.LogFile);
+
       if (arguments.DeleteLog)
         WriteArgument("delete log after success run"
                     , arguments.DeleteLog.ToString().ToLower()
                     , arguments.LogFile);
-      if (arguments.MonInterval > 0)
+
+      if (!arguments.Build && arguments.MonInterval > 0)
         WriteArgument("monitor interval", arguments.MonInterval.ToString()
                     , arguments.LogFile);
+
       if (arguments.SilentMode)
         WriteArgument("silent mode", arguments.SilentMode.ToString().ToLower()
                     , arguments.LogFile);
@@ -485,15 +583,19 @@ namespace Fahbing
     /// </summary>
     /// <param name="value">The SQL command text.</param>
     /// <param name="logFileName">The log file name.</param>
+    /// <param name="logFileOnly">Writes the command only in the log file, 
+    /// not in the output stream.</param>
     private static void WriteCommand(string value,
-                                     string logFileName)
+                                     string logFileName,
+                                     bool logFileOnly = false)
     {
       lock (LockObject)
       {
         value = value?.Trim();
 
-        WriteLine(value, CommandColor);
-        ResetColors();
+        if (!logFileOnly)
+          WriteLine(value, CommandColor);
+
         Log(logFileName, value);
       }
     }
@@ -503,15 +605,19 @@ namespace Fahbing
     /// </summary>
     /// <param name="value">The comment text.</param>
     /// <param name="logFileName">The log file name.</param>
+    /// <param name="logFileOnly">Writes the comment only in the log file, 
+    /// not in the output stream.</param>
     private static void WriteComment(string value,
-                                     string logFileName)
+                                     string logFileName,
+                                     bool logFileOnly = false)
     {
       lock (LockObject)
       {
         value = $"-- {value.Replace("\n", "\n-- ")}";
 
-        WriteLine(value, CommentColor);
-        ResetColors();
+        if (!logFileOnly)
+          WriteLine(value, CommentColor);
+
         Log(logFileName, value);
       }
     }
@@ -548,6 +654,8 @@ namespace Fahbing
       Console.ForegroundColor = colors[1];
 
       Console.WriteLine(value);
+
+      ResetColors();
     }
 
     /// <summary>
@@ -556,8 +664,11 @@ namespace Fahbing
     /// </summary>
     /// <param name="value">The database server message.</param>
     /// <param name="logFileName">The log file name.</param>
+    /// <param name="logFileOnly">Writes the comment only in the log file, 
+    /// not in the output stream.</param>
     private static void WriteMessage(string value,
-                                     string logFileName)
+                                     string logFileName,
+                                     bool logFileOnly = false)
     {
       lock (LockObject)
       {
@@ -566,8 +677,9 @@ namespace Fahbing
         else
           value = $"-- out: {value.Replace("\n", "\n-- out: ")}";
 
-        WriteLine(value, MessageColor);
-        ResetColors();
+        if (!logFileOnly)
+          WriteLine(value, MessageColor);
+
         Log(logFileName, value);
       }
     }
@@ -581,7 +693,7 @@ namespace Fahbing
       WriteComment(new string('-', 77), logFileName);
       WriteComment($"FBSQL Command Line Script Player, "
                  + $"Version {GetAssemblyVersion()} "
-                 + "\n© 2017-2021, D. Striebing"
+                 + "\n© 2017-2022, D. Striebing"
                  , logFileName);
       WriteComment(new string('-', 77), logFileName);
     }
@@ -601,7 +713,6 @@ namespace Fahbing
         value = value.Trim();
 
         WriteLine(value, CommandColor);
-        ResetColors();
         Log(logFileName, $"-- script command: {value}");
       }
     }
@@ -653,7 +764,6 @@ namespace Fahbing
       {
         Write($"-- {type}".PadRight(9), StepTypeColor);
         WriteLine(value, TreePathColor);
-        ResetColors();
         Log(logFileName, $"-- {type}".PadRight(9) + value);
       }
     }
@@ -671,7 +781,6 @@ namespace Fahbing
         value = $"-- warning: {value.Replace("\n", "\n-- ")}";
 
         WriteLine(value, WarningColor);
-        ResetColors();
         Log(logFileName, value);
       }
     }
@@ -685,6 +794,7 @@ namespace Fahbing
     {
       Arguments = GetArguments(args);
 
+      InitLogFile(Arguments.LogFile);
       WriteProgrammTitle(Arguments.LogFile);
 
       if (Arguments.ShowHelp)
@@ -695,48 +805,58 @@ namespace Fahbing
       if (string.IsNullOrEmpty(Arguments.ScriptFile))
         return 0;
 
-      using (PlayerConnection connection = new())
+      if (Arguments.Build)
       {
+        BuildFile(Arguments.ScriptFile, Arguments.BuildFile
+                , Arguments.LogFile);
+
+        ExitCode = 0;
+      }
+      else
+      {
+        using (PlayerConnection connection = new())
+        {
+          try
+          {
+            ScriptPlayer scriptPlayer = new(HandlePlayerAction, connection);
+
+            LoadScriptFile(scriptPlayer, Arguments.ScriptFile, Arguments.LogFile);
+            LoadConfiguration(scriptPlayer, Arguments.ConfigFile
+                            , Arguments.ConfigJPath, Arguments.LogFile);
+
+            if (!Arguments.SilentMode)
+            {
+              Console.WriteLine();
+              Console.WriteLine("Press any key to continue");
+              Console.ReadLine();
+              Console.WriteLine("...");
+            }
+
+            scriptPlayer.MonInterval = Arguments.MonInterval;
+
+            scriptPlayer.Exec();
+
+            ExitCode = scriptPlayer.ExitCode;
+          }
+          catch (Exception exception)
+          {
+            WriteError(exception.Message, Arguments.LogFile);
+          }
+        }
+
+        WriteComment($"program exit code: {ExitCode}", Arguments.LogFile);
+
         try
         {
-          ScriptPlayer scriptPlayer = new(HandlePlayerAction, connection);
-
-          LoadScriptFile(scriptPlayer, Arguments.ScriptFile, Arguments.LogFile);
-          LoadConfiguration(scriptPlayer, Arguments.ConfigFile
-                          , Arguments.ConfigJPath, Arguments.LogFile);
-
-          if (!Arguments.SilentMode)
-          {
-            Console.WriteLine();
-            Console.WriteLine("Press any key to continue");
-            Console.ReadLine();
-            Console.WriteLine("...");
-          }
-
-          scriptPlayer.MonInterval = Arguments.MonInterval;
-
-          scriptPlayer.Exec();
-
-          ExitCode = scriptPlayer.ExitCode;
+          if (!string.IsNullOrEmpty(Arguments.LogFile)
+            && Arguments.DeleteLog && ExitCode == 0)
+            if (File.Exists(Arguments.LogFile))
+              File.Delete(Arguments.LogFile);
         }
-        catch (Exception exception)
+        catch
         {
-          WriteError(exception.Message, Arguments.LogFile);
+          // nothing to do
         }
-      }
-
-      WriteComment($"program exit code: {ExitCode}", Arguments.LogFile);
-
-      try
-      {
-        if (!string.IsNullOrEmpty(Arguments.LogFile)
-          && Arguments.DeleteLog && ExitCode == 0)
-          if (File.Exists(Arguments.LogFile))
-            File.Delete(Arguments.LogFile);
-      }
-      catch
-      {
-        // nothing to do
       }
 
       if (Arguments.Alarm)
@@ -754,6 +874,7 @@ namespace Fahbing
 
       return ExitCode;
     }
+
   }
 
 }
