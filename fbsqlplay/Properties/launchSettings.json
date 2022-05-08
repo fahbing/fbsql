@@ -2,7 +2,9 @@
   "profiles": {
     "fbsqlplay": {
       "commandName": "Project",
-      "commandLineArgs": "\"..\\..\\..\\test\\database.xss\" /c:\"..\\..\\..\\test\\config.json\" /l:\"..\\..\\..\\test\" /a /?"
+      "commandLineArgs": "\"..\\..\\..\\test\\database.xss\" /c:\"..\\..\\..\\test\\config.json\" /l:\"..\\..\\..\\test\" /a  /?",
+      "build.commandLineArgs": "\"..\\..\\..\\test\\database.xss\" /b /a /s /?",
+      "encrypt.commandLineArgs": "/e /c:\"..\\..\\..\\test\\config.json\" /k:\"$signCertPw$\" /?"
     }
   }
 }

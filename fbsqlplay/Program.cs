@@ -1,10 +1,14 @@
 ﻿using Fahbing.Sql;
+using Newtonsoft.Json.Linq;
 using System;
 using System.IO;
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
 
 
 /// 2017-05-15 - created
+/// 2022-05-75 - support of encrypted strings for placeholders
 
 namespace Fahbing
 {
@@ -18,31 +22,38 @@ namespace Fahbing
     /// </summary>
     private struct CommandLineArgs
     {
-      /// <summary></summary>
+      /// <summary>Play sound after script run.</summary>
       public bool Alarm;
-      /// <summary></summary>
+      /// <summary>Build a script file from a folder script.</summary>
       public bool Build;
-      /// <summary></summary>
+      /// <summary>Name incl. path of the JSON formated configuration file.
+      /// </summary>
       public string BuildFile;
       /// <summary>The configuration file path. A configuration file is a JSON 
       /// file with a "fbSqlScript" property that contains the configuration 
       /// object for this program.</summary>
       public string ConfigFile;
-      /// <summary></summary>
+      /// <summary>A Json path to the config section in configFile. The 
+      /// default is "$".</summary>
       public string ConfigJPath;
-      /// <summary></summary>
+      /// <summary>Delete log file after a successful script run.</summary>
       public bool DeleteLog;
-      /// <summary></summary>
+      /// <summary>Encrypt a string.</summary>
+      public bool EncryptString;
+      /// <summary>The log file name.</summary>
       public string LogFile;
-      /// <summary></summary>
+      /// <summary>The monitor interval in milliseconds.</summary>
       public int MonInterval;
-      /// <summary></summary>
+      /// <summary>The name of a placeholder.</summary>
+      public string placeholderName;
+      /// <summary>Reduce the text output in the terminal. This does not apply 
+      /// to the output in the log file.</summary>
       public bool ReducedOutput;
-      /// <summary></summary>
+      /// <summary>Show help screen.</summary>
       public bool ShowHelp;
-      /// <summary></summary>
+      /// <summary>The Script file or folder.</summary>
       public string ScriptFile;
-      /// <summary></summary>
+      /// <summary>Run script in silent mode.</summary>
       public bool SilentMode;
     }
 
@@ -101,9 +112,9 @@ namespace Fahbing
     /// <summary>
     /// Creates an XML file version of a folder script.
     /// </summary>
-    /// <param name="sourceFolder"></param>
-    /// <param name="destFile"></param>
-    /// <param name="logFileName"></param>
+    /// <param name="sourceFolder">The path of a folder script.</param>
+    /// <param name="destFile">The path of the destination script file.</param>
+    /// <param name="logFileName">The log file name.</param>
     private static void BuildFile(string sourceFolder,
                                   string destFile,
                                   string logFileName)
@@ -144,6 +155,74 @@ namespace Fahbing
     }
 
     /// <summary>
+    /// Decrypts a string.
+    /// </summary>
+    /// <param name="value">The string to decrypt.</param>
+    /// <returns>The decrypted string.</returns>
+    /// https://docs.microsoft.com/de-de/dotnet/api/system.security.cryptography.protecteddata.unprotect?view=dotnet-plat-ext-6.0
+    private static string DecryptString(string value)
+    {
+      byte[] encryptedData = Convert.FromBase64String(value);
+      byte[] userData = ProtectedData.Unprotect(encryptedData, null
+                      , DataProtectionScope.CurrentUser);
+
+      return Encoding.Unicode.GetString(userData);
+    }
+
+    private static void EncryptEnteredString(string configFile, 
+                                             string configJPath, 
+                                             string placeholderName)
+    {
+      while (true)
+      {
+        Console.WriteLine();
+        Console.Write("enter the string to encrypt: ");
+        string value = ReadString(true);
+
+        if (string.IsNullOrEmpty(value))
+        {
+          WriteError("The string to be encrypted must not be empty!");
+          continue;
+        }
+
+        value = EncryptString(value);
+
+        Console.WriteLine();
+        Console.Write("re-enter the string to encrypt: ");
+
+        string confirmValue = ReadString(true);
+
+        if (DecryptString(value) == confirmValue)
+        {
+          if (!SavePlaceholderValue(configFile, configJPath, placeholderName
+                                  , value, true))
+          {
+            Console.WriteLine(value);
+            Console.ReadLine();
+          }
+          break;
+        }
+        else
+          WriteError("The two strings entered are not identical!");
+      }
+    }
+
+    /// <summary>
+    /// Encrypts a string.
+    /// </summary>
+    /// <param name="value">The string to encrypt.</param>
+    /// <returns>The encrypted string.</returns>
+    /// https://docs.microsoft.com/de-de/dotnet/api/system.security.cryptography.protecteddata.protect?view=dotnet-plat-ext-6.0
+    private static string EncryptString(string value)
+    {
+      byte[] userData = Encoding.Unicode.GetBytes(value);
+      byte[] encryptedData = ProtectedData.Protect(userData, null
+                       , DataProtectionScope.CurrentUser);
+
+      return Convert.ToBase64String(encryptedData);
+    }
+
+    /// <summary>
     /// Evaluates the command line arguments and returns them in an <see 
     /// cref="CommandLineArgs"/> struct.
     /// </summary>
@@ -160,8 +239,10 @@ namespace Fahbing
       result.ConfigFile = "";
       result.ConfigJPath = "$";
       result.DeleteLog = false;
+      result.EncryptString = false;
       result.LogFile = "";
       result.MonInterval = 0;
+      result.placeholderName = "";
       result.ReducedOutput = false;
       result.ShowHelp = false;
       result.ScriptFile = "";
@@ -234,6 +315,14 @@ namespace Fahbing
          || argument.Equals("-d", StringComparison.OrdinalIgnoreCase))
           result.DeleteLog = true;
         else
+        if (argument.Equals("/e", StringComparison.OrdinalIgnoreCase)
+         || argument.Equals("-e", StringComparison.OrdinalIgnoreCase))
+          result.EncryptString = true;
+        else
+        if (argument.StartsWith("/k:", StringComparison.OrdinalIgnoreCase)
+         || argument.StartsWith("-k:", StringComparison.OrdinalIgnoreCase))
+          result.placeholderName = argument.Substring(3);
+        else
         if (argument.Equals("?:", StringComparison.OrdinalIgnoreCase)
          || argument.Equals("/?", StringComparison.OrdinalIgnoreCase)
          || argument.Equals("-?", StringComparison.OrdinalIgnoreCase)
@@ -282,15 +371,15 @@ namespace Fahbing
       switch (type)
       {
         case EventType.cmdEnd:
-            lock (LockObject)
-            {
-              WriteComment($"elapsed time for command: {text}"
-                         , Arguments.LogFile, Arguments.ReducedOutput);
-              Log(Arguments.LogFile, "");
-              
-              if (!Arguments.ReducedOutput)
-                Console.WriteLine();
-            }
+          lock (LockObject)
+          {
+            WriteComment($"elapsed time for command: {text}"
+                       , Arguments.LogFile, Arguments.ReducedOutput);
+            Log(Arguments.LogFile, "");
+
+            if (!Arguments.ReducedOutput)
+              Console.WriteLine();
+          }
           break;
         case EventType.cmdStart:
           WriteTreePath("cmd", "#" + (++value).ToString().PadLeft(3, '0')
@@ -366,16 +455,27 @@ namespace Fahbing
       Console.WriteLine("   /m:int32          The monitor interval in milliseconds.");
       Console.WriteLine("   /p:cfgJsonPath    A Json path to the config section in configFile.");
       Console.WriteLine("                     The default is \"$\".");
+      Console.WriteLine("   /r                Reduce the text output in the terminal. This does not ");
+      Console.WriteLine("                     apply to the output in the log file.");
       Console.WriteLine("   /s                The script runs in silent mode.");
       Console.WriteLine();
       Console.WriteLine("   fbsqlplay scriptFolder /b[:fileName] /l[:dir|file] /a");
       Console.WriteLine();
-      Console.WriteLine("   /b[:fileName]     Builds a script file from a folder script. The default file ");
+      Console.WriteLine("   /b[:fileName]     Build a script file from a folder script. The default file ");
       Console.WriteLine("                     name is \"script.xss\" in the script folder.");
+      Console.WriteLine();
+      Console.WriteLine("   fbsqlplay /e [/c:cfgFile [/p:cfgJsonPath] /k:placeholderName]");
+      Console.WriteLine();
+      Console.WriteLine("   /e                Encrypt a string.");
+      Console.WriteLine("   /c:cfgFile        Name incl. path of the JSON formated configuration file.");
+      Console.WriteLine("   /p:cfgJsonPath    A Json path to the config section in configFile.");
+      Console.WriteLine("                     The default is \"$\".");
+      Console.WriteLine("   /k:placeholder    The key name of the placeholder to which the encrypted ");
+      Console.WriteLine("                     string is stored.");
       Console.WriteLine();
       Console.WriteLine(new string('-', 80));
     }
-
+   
     /// <summary>
     /// Deletes the log file if it already exists.
     /// </summary>
@@ -480,12 +580,94 @@ namespace Fahbing
     }
 
     /// <summary>
+    /// Reads a string from the console.
+    /// </summary>
+    /// <param name="hidden">If the value is true, the characters are not 
+    /// output to the console.</param>
+    /// <returns>The entered string.</returns>
+    private static string ReadString(bool hidden = false)
+    {
+      if (!hidden)
+        return Console.ReadLine();
+
+      ConsoleKeyInfo keyInfo = Console.ReadKey(true);
+      string value = "";
+
+      while (keyInfo.Key != ConsoleKey.Enter)
+      {
+        if (keyInfo.Key == ConsoleKey.Backspace)
+        {
+          if (value.Length > 0)
+            value = value.Remove(value.Length - 1, 1);
+        }
+        else
+        {
+          if (keyInfo.KeyChar >= 32)
+            value += keyInfo.KeyChar;
+        }
+
+        keyInfo = Console.ReadKey(true);
+      }
+
+      Console.WriteLine();
+      return value;
+    }
+
+    /// <summary>
     /// Resets the <see cref="Console"/> colors to the programm start values.
     /// </summary>
     private static void ResetColors()
     {
       Console.BackgroundColor = StandardColor[0];
       Console.ForegroundColor = StandardColor[1];
+    }
+
+    private static bool SavePlaceholderValue(string configFile, 
+                                             string configJPath, 
+                                             string placeholderName,
+                                             string value,
+                                             bool encrypted)
+    {
+      if (!string.IsNullOrEmpty(configFile)
+       && !string.IsNullOrEmpty(configJPath)
+       && !string.IsNullOrEmpty(placeholderName))
+      {
+        try
+        {
+          JObject config = JObject.Parse(File.ReadAllText(configFile));
+          JToken playerConfig = config.SelectToken(configJPath);
+
+          if (playerConfig == null)
+          {
+            WriteError($"Invalid JSON path {configJPath}");
+
+            return false;
+          }
+
+          if (playerConfig["placeholders"] == null)
+            playerConfig["placeholders"] = new JObject();
+
+          JObject placeholders = playerConfig["placeholders"] as JObject;
+
+          if (encrypted)
+          {
+            JObject placeholder = new();
+            placeholder["encrypted"] = true;
+            placeholder["value"] = value;
+            placeholders[placeholderName] = placeholder;
+          }
+          else
+            placeholders[placeholderName] = value;
+
+          File.WriteAllText(configFile, config.ToString(Newtonsoft.Json.Formatting.Indented));
+
+          return true;
+        } catch (Exception exception) {
+          WriteError(exception.Message);
+        }
+      }
+
+      return false;
     }
 
     /// <summary>
@@ -546,6 +728,18 @@ namespace Fahbing
     private static void WriteArguments(CommandLineArgs arguments)
     {
       WriteComment($"command line arguments", arguments.LogFile);
+
+      if (arguments.EncryptString)
+      {
+        WriteArgument("encrypt string", "true", arguments.LogFile);
+        WriteArgument("config file", arguments.ConfigFile, arguments.LogFile);
+        WriteArgument("config path", arguments.ConfigJPath, arguments.LogFile);
+        WriteArgument("placeholder name", arguments.placeholderName
+                    , arguments.LogFile);
+
+        return;
+      }
+
       WriteArgument("script path", arguments.ScriptFile, arguments.LogFile);
 
       if (arguments.Build)
@@ -560,8 +754,14 @@ namespace Fahbing
 
       WriteArgument("log file", arguments.LogFile, arguments.LogFile);
 
+      if (arguments.ReducedOutput)
+        WriteArgument("reduced output"
+                    , arguments.ReducedOutput.ToString().ToLower()
+                    , arguments.LogFile);
+
       if (arguments.Alarm)
-        WriteArgument("play sound is finish", arguments.Alarm.ToString().ToLower()
+        WriteArgument("play sound is finish"
+                    , arguments.Alarm.ToString().ToLower()
                     , arguments.LogFile);
 
       if (arguments.DeleteLog)
@@ -628,7 +828,7 @@ namespace Fahbing
     /// <param name="value">The error message.</param>
     /// <param name="logFileName">The log file name.</param>
     private static void WriteError(string value,
-                                   string logFileName)
+                                   string logFileName = null)
     {
       lock (LockObject)
       {
@@ -737,7 +937,7 @@ namespace Fahbing
     /// <summary>
     /// Writes the script start informations.
     /// </summary>
-    /// <param name="logFileName"></param>
+    /// <param name="logFileName">The log file name.</param>
     private static void WriteScriptStart(string logFileName)
     {
       lock (LockObject)
@@ -788,8 +988,9 @@ namespace Fahbing
     /// <summary>
     /// FBSQL Command Line Script Player
     /// </summary>
-    /// <param name="args"></param>
-    /// <returns>The exit code for the programm.</returns>
+    /// <param name="args">The command line arguments as a string array.
+    /// </param>
+    /// <returns>The exit code for the program.</returns>
     static int Main(string[] args)
     {
       Arguments = GetArguments(args);
@@ -801,6 +1002,14 @@ namespace Fahbing
         Help();
 
       WriteArguments(Arguments);
+
+      if (Arguments.EncryptString)
+      {
+        EncryptEnteredString(Arguments.ConfigFile, Arguments.ConfigJPath
+                           , Arguments.placeholderName);
+
+        return 0;
+      }
 
       if (string.IsNullOrEmpty(Arguments.ScriptFile))
         return 0;
@@ -818,7 +1027,8 @@ namespace Fahbing
         {
           try
           {
-            ScriptPlayer scriptPlayer = new(HandlePlayerAction, connection);
+            ScriptPlayer scriptPlayer = new(connection, HandlePlayerAction
+                                          , DecryptString);
 
             LoadScriptFile(scriptPlayer, Arguments.ScriptFile, Arguments.LogFile);
             LoadConfiguration(scriptPlayer, Arguments.ConfigFile

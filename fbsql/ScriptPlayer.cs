@@ -13,6 +13,13 @@ using System.Threading.Tasks;
 namespace Fahbing.Sql
 {
   /// <summary>
+  /// 
+  /// </summary>
+  /// <param name="value"></param>
+  /// <returns></returns>
+  public delegate string DecryptFunc(string value);
+
+  /// <summary>
   /// Defines the various types of events for the <see cref="ScriptPlayer"/>.
   /// </summary>
   /// <param name="type">The type of the event, see <see cref="EventType"/>.
@@ -69,11 +76,28 @@ namespace Fahbing.Sql
   /// </summary>
   public class ScriptPlayer
   {
+    /// <summary>
+    /// 
+    /// </summary>
+    internal class Placeholder
+    {
+      /// <summary>
+      /// 
+      /// </summary>
+      public bool IsEncrypted { get; set; }
+
+      /// <summary>
+      /// 
+      /// </summary>
+      public string Value { get; set; }
+    }
+
+    private readonly DecryptFunc DecryptString;
     private readonly EventAction Action;
     private readonly SqlScriptConnection Connection;
     private string MonitorCommand;
     private string MonitorConnectionString;
-    public Dictionary<string, string> Placeholders;
+    private readonly Dictionary<string, Placeholder> Placeholders;
     private readonly SqlTree ScriptCmds;
     private int TranCmdCount;
     private bool TranDisabled;
@@ -87,13 +111,15 @@ namespace Fahbing.Sql
     /// <summary>
     /// Creates a new instance of the <see cref="ScriptPlayer"/> class.
     /// </summary>
-    public ScriptPlayer(EventAction action
-                      , SqlScriptConnection connection)
+    public ScriptPlayer(SqlScriptConnection connection,
+                        EventAction eventAction,
+                        DecryptFunc decryptFunc)
     {
-      Action = action;
       Connection = connection;
+      Action = eventAction;
+      DecryptString = decryptFunc;
       MonitorCommand = "IF (OBJECT_ID('tempDB..##xssMonitor') IS NOT NULL) EXEC ##xssMonitor";
-      Placeholders = new Dictionary<string, string>();
+      Placeholders = new Dictionary<string, Placeholder>();
       ScriptCmds = new SqlTree();
       TranCmdCount = 0;
     }
@@ -272,24 +298,27 @@ namespace Fahbing.Sql
     private void ExecCommand(SqlScriptCommand command,
                              int cmdIndex = 0)
     {
-      var sql = ReplacePlaceholder(command.Sql);
+      string sql = ReplacePlaceholder(command.Sql, true);
+      string text = ReplacePlaceholder(command.Sql);
 
-      Action?.Invoke(EventType.cmdStart, sql, cmdIndex);
+      Action?.Invoke(EventType.cmdStart, text, cmdIndex);
 
       switch (command.CmdType)
       {
         case SqlScriptCmdType.comment:
-          Action?.Invoke(EventType.comment, command.Sql, 0);
+          Action?.Invoke(EventType.comment, text, 0);
           break;
         case SqlScriptCmdType.commit:
           Action?.Invoke(EventType.scriptCmd, "COMMIT", 0);
           Commit();
           break;
         case SqlScriptCmdType.connect:
-          var conStr = ReplacePlaceholder(command.CmdParams[0]?.ToString());
+          sql = ReplacePlaceholder(command.CmdParams[0]?.ToString(), true);
+          text = ReplacePlaceholder(command.CmdParams[0]?.ToString());
 
-          Action?.Invoke(EventType.scriptCmd, $"CONNECT {conStr}", 0);
-          Connect(conStr);
+          Action?.Invoke(EventType.scriptCmd
+                       , $"CONNECT '{text.Replace("'", "''")}'", 0);
+          Connect(sql);
           break;
         case SqlScriptCmdType.disconnect:
           Action?.Invoke(EventType.scriptCmd, "DISCONNECT", 0);
@@ -390,7 +419,12 @@ namespace Fahbing.Sql
         {
           foreach (JProperty item in placeholder.Properties())
           {
-            SetPlaceholder(item.Name, item.Value?.ToString());
+            if (item.Value is JObject && Convert.ToBoolean(item.Value["encrypted"]))
+              SetPlaceholder(item.Name
+                           , DecryptString(item.Value["value"]?.ToString())
+                           , true);
+            else
+              SetPlaceholder(item.Name, item.Value?.ToString());
           }
         }
       }
@@ -423,14 +457,16 @@ namespace Fahbing.Sql
     /// </summary>
     /// <param name="value">The string in which replacements are to be made.
     /// </param>
+    /// <param name="decrypted"></param>
     /// <returns>The string with the exchanged placeholders.</returns>
-    private string ReplacePlaceholder(string value)
+    private string ReplacePlaceholder(string value, bool decrypted = false)
     {
       var result = value;
 
       foreach (var item in Placeholders)
       {
-        result = result.Replace(item.Key, item.Value);
+        result = result.Replace(item.Key, item.Value.IsEncrypted && !decrypted
+                              ? "*****" : item.Value.Value);
       }
 
       return result;
@@ -460,9 +496,19 @@ namespace Fahbing.Sql
     /// </summary>
     /// <param name="key">The placeholder name.</param>
     /// <param name="value">The new placeholder value.</param>
-    private void SetPlaceholder(string key, string value)
+    private void SetPlaceholder(string key
+                              , string value
+                              , bool IsEncrypted = false)
     {
-      Placeholders[key] = value;
+      Placeholders[key] = new Placeholder()
+      {
+        IsEncrypted = IsEncrypted,
+        Value = value
+      };
+
+      if (IsEncrypted)
+        value = "*****";
+
       key = key.Replace("'", "''");
       value = value.Replace("'", "''");
 
