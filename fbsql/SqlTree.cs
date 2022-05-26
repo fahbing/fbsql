@@ -1,15 +1,26 @@
 ﻿using System;
 using System.IO;
-using System.IO.Compression;
 using System.Xml.Linq;
 
 
 /// 2006-07-05 - created
-/// 2021-12-14 - porting to .NET Standard 2.0
+/// 2015-02-07 - porting to c#
+/// 2021-12-14 - .NET Standard 2.0
 
 namespace Fahbing.Sql
 {
   /// <summary>
+  /// An enumeration of supported SQL languages
+  /// </summary>
+  public enum SqlLanguage {
+    /// <summary>Transact SQL</summary>
+    TSQL,
+    /// <summary>MySQL</summary>
+    MySQL,
+  }
+
+  /// <summary>
+  /// Represents the tree structure of a FBSQL script.
   /// <see cref="SqlTree"/> is a descendant from <see cref="SqlTreeBatch"/>.
   /// </summary>
   /// <created>2006-07-05</created><modified>2015-02-07</modified>
@@ -20,6 +31,11 @@ namespace Fahbing.Sql
 
     /// <summary>The loaded script as an XML document.</summary>
     protected XDocument Document { get; private set; }
+
+    /// <summary>Specifies the SQL language used in the script. The value was 
+    /// used in the old GUI only for the color schema of syntax highlighting.
+    /// </summary>
+    public SqlLanguage Language { get; set; } = SqlLanguage.TSQL;
 
     /// <summary>The major version of the script.</summary>
     public int Major { get; set; }
@@ -45,25 +61,21 @@ namespace Fahbing.Sql
     /// </summary>
     /// <returns>A <see cref="XDocument"/> instance that contains a new empty 
     /// script.</returns>
-    /// <created>2006-07-05</created><modified>2021-12-14</modified>
+    /// <created>2006-07-05</created><modified>2021-12-29</modified>
     public XDocument GetEmptyXDocument()
     {
       XElement batch = new("batch"
                          , new XAttribute("name", "script")
                          , new XAttribute("executable", "true")
-                         , new XAttribute("expanded", "true")
-                         , new XAttribute("guid"
-                         , System.Guid.NewGuid().ToString().ToLower()));
+                         , new XAttribute("expanded", "true"));
       XElement version = new("version"
                            , new XAttribute("major", "0")
                            , new XAttribute("minor", "0")
                            , new XAttribute("release", "0")
                            , new XAttribute("build", "0"));
       XElement script = new("script"
-                           , new XAttribute("version", "3.0.0")
-                           , new XAttribute("sqllanguage", "")
-                           , new XAttribute("guid"
-                           , System.Guid.NewGuid().ToString().ToLower())
+                           , new XAttribute("version", "4.0")
+                           , new XAttribute("sqllanguage", "TSQL")
                            , version, batch);
       return new XDocument(script);
     }
@@ -73,14 +85,15 @@ namespace Fahbing.Sql
     /// </summary>
     /// <returns>An <see cref="XDocument"/> instance that contains the 
     /// complete script.</returns>
-    /// <created>2006-07-05</created><modified>2021-12-14</modified>
+    /// <created>2006-07-05</created><modified>2021-12-29</modified>
     public XDocument GetXDocument()
     {
       XDocument document = GetEmptyXDocument();
       XElement scriptNode = document.Element("script");
       XElement batchNode = scriptNode.Element("batch");
 
-      scriptNode.Attribute("guid").SetValue(Guid);
+      scriptNode.Attribute("sqllanguage").SetValue(Language.ToString());
+
       scriptNode.Element("version").Attribute("major").SetValue(Major);
       scriptNode.Element("version").Attribute("minor").SetValue(Minor);
       scriptNode.Element("version").Attribute("release").SetValue(Release);
@@ -89,19 +102,6 @@ namespace Fahbing.Sql
       batchNode.ReplaceWith(GetXElement());
 
       return document;
-    }
-
-    /// <summary>
-    /// Gets the version numbers from a version <see cref="XElement"/>.
-    /// </summary>
-    /// <param name="version"></param>
-    /// <created>2012-06-21</created><modified>2021-12-14</modified>
-    private void GetVersionFromXElement(XElement version)
-    {
-      Major = GetInt32FromAttribute(version.Attribute("major"));
-      Minor = GetInt32FromAttribute(version.Attribute("minor"));
-      Release = GetInt32FromAttribute(version.Attribute("release"));
-      Build = GetInt32FromAttribute(version.Attribute("build"));
     }
 
     /// <summary>
@@ -133,7 +133,7 @@ namespace Fahbing.Sql
       if (!Directory.Exists(scriptPath))
         return;
 
-      GetVersionFromXElement(XDocument.Load(Path.Combine(scriptPath
+      SetVersionFromXElement(XDocument.Load(Path.Combine(scriptPath
                            , "__version.xml")).Element("version"));
       base.LoadFromDirectory(scriptPath, action);
 
@@ -153,7 +153,7 @@ namespace Fahbing.Sql
       XElement scriptNode = Document.Element("script");
       XElement batchNode = scriptNode.Element("batch");
 
-      GetVersionFromXElement(scriptNode.Element("version"));
+      SetVersionFromXElement(scriptNode.Element("version"));
       LoadFromXElement(batchNode);
     }
 
@@ -195,10 +195,6 @@ namespace Fahbing.Sql
         Directory.Move(scriptPath, Path.Combine(backupPath
                      , Build.ToString().PadLeft(6, '0') + "_"
                      + DateTime.Now.ToFileTime().ToString()));
-
-        //if (Directory.Exists(path))
-        //  ZipFile.CreateFromDirectory(scriptPath, Path.Combine(path
-        //        , $"Build_{Build.ToString().PadLeft(6, '0')}.zip"));
       }
 
       IncBuildNumber();
@@ -228,6 +224,36 @@ namespace Fahbing.Sql
     {
       IncBuildNumber();
       GetXDocument().Save(fileName);
+    }
+
+    /// <summary>
+    /// Sets the script SQL language from the attribute of an <see
+    /// cref="XElement"/>.
+    /// </summary>
+    /// <param name="element">An XElement instance that contains the 
+    /// sqlLanguage attribute.</param>
+    /// <created>2021-12-29</created><modified>2022-05-26</modified>
+    private void SetScriptPropsFromXElement(XElement element)
+    {
+      string langStr = GetStringFromXAttribute(element.Attribute("sqlLanguage"));
+
+      Language = Enum.TryParse(langStr, out SqlLanguage language) 
+               ? language : SqlLanguage.TSQL;
+    }
+
+    /// <summary>
+    /// Sets the script version numbers from the attributes of an <see
+    /// cref="XElement"/>.
+    /// </summary>
+    /// <param name="element">An XElement instance that contains the version 
+    /// attributes (major, minor, release and build).</param>
+    /// <created>2012-06-21</created><modified>2022-05-26</modified>
+    private void SetVersionFromXElement(XElement element)
+    {
+      Major = GetInt32FromAttribute(element.Attribute("major"));
+      Minor = GetInt32FromAttribute(element.Attribute("minor"));
+      Release = GetInt32FromAttribute(element.Attribute("release"));
+      Build = GetInt32FromAttribute(element.Attribute("build"));
     }
   }
 
