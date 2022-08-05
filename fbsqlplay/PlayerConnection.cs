@@ -145,7 +145,7 @@ namespace Fahbing.Sql
       Command.CommandTimeout = Timeout;
       Command.Transaction = Transaction;
 
-      Command.ExecuteScalar();
+      Command.ExecuteNonQuery();
     }
 
     /// <summary>

@@ -3,8 +3,8 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <LangVersion>latest</LangVersion>
-    <AssemblyVersion>1.0.29</AssemblyVersion>
-    <FileVersion>1.0.29</FileVersion>
+    <AssemblyVersion>1.0.30</AssemblyVersion>
+    <FileVersion>1.0.30</FileVersion>
     <NeutralLanguage>en-GB</NeutralLanguage>
     <TargetFramework>net472</TargetFramework>
   </PropertyGroup>
