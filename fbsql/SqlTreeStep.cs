@@ -7,16 +7,20 @@ using System.Xml.Linq;
 
 /// 2006-07-05 - created
 /// 2015-02-07 - porting to c#
-/// 2021-12-14 - .NET Standard 2.0
+/// 2021-12-14 - adaptations for .NET Standard 2.0
 
 namespace Fahbing.Sql
 {
   /// <summary>
   /// Represents one or more SQL commands.
   /// </summary>
-  /// <created>2006-07-05</created><changed>2015-02-07</changed>
+  /// <created>2006-07-05</created><changed>2022-08-19</changed>
   public class SqlTreeStep : SqlTreeItem
   {
+    /// <summary>Gets or sets the source file name as debug information.
+    /// </summary>
+    public string SourcePath { get; private set; }
+
     /// <summary>Gets or sets the SQL command text.</summary>
     public string Sql { get; set; }
 
@@ -25,11 +29,12 @@ namespace Fahbing.Sql
     /// Creates a new instance of the <see cref="SqlTreeStep"/> class.
     /// </summary>
     /// <param name="parent">The parent <see cref="SqlTreeBatch"/> instance.</param>
-    /// <created>2006-07-05</created><changed>2021-12-11</changed>
+    /// <created>2006-07-05</created><changed>2022-08-19</changed>
     public SqlTreeStep(SqlTreeBatch parent)
       : base(SqlTreeItemType.step, parent)
     {
-      this.Executable = true;
+      Executable = true;
+      SourcePath = "";
       Sql = "";
 
       if (this.Parent != null)
@@ -94,7 +99,7 @@ namespace Fahbing.Sql
     /// <created>2015-07-11</created><changed>2015-07-11</changed>
     public List<SqlScriptCommand> GetCommands(StringParser parser)
     {
-      return SqlScriptCommand.Parse(parser, this.Sql);
+      return SqlScriptCommand.Parse(parser, Sql, SourcePath);
     }
 
     /// <summary>
@@ -117,11 +122,11 @@ namespace Fahbing.Sql
     /// </summary>
     /// <param name="step">An <see cref="XElement"/> instance that contains 
     /// the definition of the <see cref="SqlTreeStep"/>.</param>
-    /// <created>2015-02-08</created><changed>2015-02-08</changed>
+    /// <created>2015-02-08</created><changed>2022-08-19</changed>
     protected void LoadFromXElement(XElement step)
     {
-      this.Title = GetStringFromXAttribute(step.Attribute("name"));
-      this.Executable = GetBooleanFromXAttribute(step.Attribute("executable"));
+      Title = GetStringFromXAttribute(step.Attribute("name"));
+      Executable = GetBooleanFromXAttribute(step.Attribute("executable"));
     }
 
     /// <summary>
@@ -130,13 +135,19 @@ namespace Fahbing.Sql
     /// <param name="path">A file system path to the file.</param>
     /// <param name="action">A <see cref="LoadAction"/> delegate function, 
     /// e.B. for progress indicators.</param>
-    /// <created>2015-02-08</created><modified>2022-05-17</modified>
+    /// <param name="debug">Specifies whether debug information should be 
+    /// stored.</param>
+    /// <created>2015-02-08</created><modified>2022-08-20</modified>
     public override void LoadFromDirectory(string path
-                                         , LoadAction action = null)
+                                         , LoadAction action = null
+                                         , bool debug = false)
     {
       if (File.Exists(path))
       {
         action?.Invoke(SqlTreeItemType.step, path);
+
+        if (debug)
+          SourcePath = Path.GetFullPath(path);
 
         var lines = File.ReadAllLines(path);
 

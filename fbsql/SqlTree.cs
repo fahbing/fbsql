@@ -5,7 +5,7 @@ using System.Xml.Linq;
 
 /// 2006-07-05 - created
 /// 2015-02-07 - porting to c#
-/// 2021-12-14 - .NET Standard 2.0
+/// 2021-12-14 - adaptations for .NET Standard 2.0
 
 namespace Fahbing.Sql
 {
@@ -119,9 +119,12 @@ namespace Fahbing.Sql
     /// <param name="path">A file system path to the directory.</param>
     /// <param name="action">A <see cref="LoadAction"/> delegate function, 
     /// e.B. for progress indicators.</param>
-    /// <created>2012-06-21</created><modified>2021-12-14</modified>
+    /// <param name="debug">Specifies whether debug information should be 
+    /// stored.</param>
+    /// <created>2012-06-21</created><modified>2022-08-19</modified>
     public override void LoadFromDirectory(string path
-                                         , LoadAction action = null)
+                                         , LoadAction action = null
+                                         , bool debug = false)
     {
       Reset();
 
@@ -135,7 +138,7 @@ namespace Fahbing.Sql
 
       SetVersionFromXElement(XDocument.Load(Path.Combine(scriptPath
                            , "__version.xml")).Element("version"));
-      base.LoadFromDirectory(scriptPath, action);
+      base.LoadFromDirectory(scriptPath, action, debug);
 
       Document = GetXDocument();
     }
@@ -255,6 +258,6 @@ namespace Fahbing.Sql
       Release = GetInt32FromAttribute(element.Attribute("release"));
       Build = GetInt32FromAttribute(element.Attribute("build"));
     }
-  }
 
+  }
 }

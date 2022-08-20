@@ -8,30 +8,38 @@ using System.Threading.Tasks;
 
 
 /// 2017-05-15 - created
-/// 2021-12-12 - porting to .NET Standard 2.0
+/// 2021-12-12 - adaptations for .NET Standard 2.0
 
 namespace Fahbing.Sql
 {
   /// <summary>
-  /// 
+  /// A delegate to decrypt a string.
   /// </summary>
   /// <param name="value"></param>
   /// <returns></returns>
   public delegate string DecryptFunc(string value);
 
   /// <summary>
-  /// Defines the various types of events for the <see cref="ScriptPlayer"/>.
+  /// A delegate to handle the script player events.
   /// </summary>
   /// <param name="type">The type of the event, see <see cref="EventType"/>.
   /// </param>
   /// <param name="text">A message or command text.</param>
-  /// <param name="value">A numeric (<see langword="long" />) parameter 
+  /// <param name="value">A numeric (<see langword="long"/>) parameter 
   /// value. Used in <see cref="EventType.cmdStart" />, <see 
   /// cref="EventType.cmdEnd" />,<see cref="EventType.scriptStart" /> and 
   /// <see cref="EventType.scriptCmd" />.</param>
-  public delegate void EventAction(EventType type, string text, long value);
+  /// <param name="debugInfo">A <see cref="DebugInfo"/> instance that contains
+  /// source informations for a command.</param>
+  public delegate void EventAction(EventType type
+                                 , string text
+                                 , long value
+                                 , DebugInfo debugInfo = null);
 
-  /// <summary></summary>
+
+  /// <summary>
+  /// Defines the various types of events for the <see cref="ScriptPlayer"/>.
+  /// </summary>
   public enum EventType
   {
     /// <summary>A SQL command was executed.</summary>
@@ -72,45 +80,74 @@ namespace Fahbing.Sql
 
 
   /// <summary>
-  /// A player to execute FBSQL scripts (Xml Sql Scripts: xss - files).
+  /// A player to execute FBSQL scripts (xss - file or folder).
   /// </summary>
   public class ScriptPlayer
   {
     /// <summary>
-    /// 
+    /// An internal class to store placeholder values.
     /// </summary>
     internal class Placeholder
     {
       /// <summary>
-      /// 
+      /// Indicates whether the placeholder value is encrypted.
       /// </summary>
       public bool IsEncrypted { get; set; }
 
       /// <summary>
-      /// 
+      /// The placeholder value.
       /// </summary>
       public string Value { get; set; }
     }
 
-    private readonly DecryptFunc DecryptString;
+    /// <summary>Stores the delegate to handle the script player eevents.
+    /// </summary>
     private readonly EventAction Action;
+
+    /// <summary>Stores the delegate to decrypt strings.</summary>
+    private readonly DecryptFunc DecryptString;
+
+    /// <summary>Stores the <see cref="SqlScriptConnection"/> instance:
+    /// </summary>
     private readonly SqlScriptConnection Connection;
-    private string MonitorCommand;
-    private string MonitorConnectionString;
-    private readonly Dictionary<string, Placeholder> Placeholders;
-    private readonly SqlTree ScriptCmds;
-    private int TranCmdCount;
-    private bool TranDisabled;
 
     /// <summary>The current exit code for the script.</summary>
     public int ExitCode { get; private set; }
+
     /// <summary>Interval in milliseconds for monitoring.</summary>
-    public int MonInterval { get; set; } = 0;
+    public int MonitorInterval { get; set; } = 0;
+
+    /// <summary>The monitor SQL statement.</summary>
+    private string MonitorCommand;
+
+    /// <summary>The connection string for the monitor command.</summary>
+    private string MonitorConnectionString;
+
+    /// <summary>Stores the placeholder values in a <see cref="Dictionary"/>.
+    /// </summary>
+    private readonly Dictionary<string, Placeholder> Placeholders;
+
+    /// <summary>Stores the script in a <see cref="SqlTree"/> instance.
+    /// </summary>
+    private readonly SqlTree ScriptCmds;
+
+    /// <summary>Counter for executed commands in the current transaction
+    /// </summary>
+    private int TranCmdCount;
+
+    /// <summary>Internally stores the value of whether transaction mode is 
+    /// disabled.</summary>
+    private bool TranDisabled;
 
 
     /// <summary>
     /// Creates a new instance of the <see cref="ScriptPlayer"/> class.
     /// </summary>
+    /// <param name="connection">A <see cref="SqlScriptConnection"/> instance
+    /// for the script player.</param>
+    /// <param name="eventAction">A delegate to handle a script player event.
+    /// </param>
+    /// <param name="decryptFunc">A delegate to decrypt a string.</param>
     public ScriptPlayer(SqlScriptConnection connection,
                         EventAction eventAction,
                         DecryptFunc decryptFunc)
@@ -167,7 +204,7 @@ namespace Fahbing.Sql
 
       Action?.Invoke(EventType.connected, connectionString, 0);
 
-      if (MonInterval > 0)
+      if (MonitorInterval > 0)
         ExecMonitor();
 
       TranCmdCount = 0;
@@ -193,7 +230,7 @@ namespace Fahbing.Sql
 
       if (Connection.IsOpen())
       {
-        if (MonInterval > 0)
+        if (MonitorInterval > 0)
           ExecMonitor();
 
         Connection.Disconnect();
@@ -208,7 +245,7 @@ namespace Fahbing.Sql
     {
       ExitCode = -1;
       int count = 0;
-      bool monitoring = MonInterval > 0;
+      bool monitoring = MonitorInterval > 0;
       Stopwatch cmdWatch = new();
       Stopwatch scriptWatch = new();
 
@@ -228,7 +265,7 @@ namespace Fahbing.Sql
           while (monitoring)
           {
             ExecMonitor();
-            Thread.Sleep(MonInterval);
+            Thread.Sleep(MonitorInterval);
           }
         });
       }
@@ -301,15 +338,15 @@ namespace Fahbing.Sql
       string sql = ReplacePlaceholder(command.Sql, true);
       string text = ReplacePlaceholder(command.Sql);
 
-      Action?.Invoke(EventType.cmdStart, text, cmdIndex);
+      Action?.Invoke(EventType.cmdStart, text, cmdIndex, command.DebugInfo);
 
       switch (command.CmdType)
       {
         case SqlScriptCmdType.comment:
-          Action?.Invoke(EventType.comment, text, 0);
+          Action?.Invoke(EventType.comment, text, 0, command.DebugInfo);
           break;
         case SqlScriptCmdType.commit:
-          Action?.Invoke(EventType.scriptCmd, "COMMIT", 0);
+          Action?.Invoke(EventType.scriptCmd, "COMMIT", 0, command.DebugInfo);
           Commit();
           break;
         case SqlScriptCmdType.connect:
@@ -317,15 +354,18 @@ namespace Fahbing.Sql
           text = ReplacePlaceholder(command.CmdParams[0]?.ToString());
 
           Action?.Invoke(EventType.scriptCmd
-                       , $"CONNECT '{text.Replace("'", "''")}'", 0);
+                       , $"CONNECT '{text.Replace("'", "''")}'", 0
+                       , command.DebugInfo);
           Connect(sql);
           break;
         case SqlScriptCmdType.disconnect:
-          Action?.Invoke(EventType.scriptCmd, "DISCONNECT", 0);
+          Action?.Invoke(EventType.scriptCmd, "DISCONNECT"
+            , 0, command.DebugInfo);
           Disconnect();
           break;
         case SqlScriptCmdType.rollback:
-          Action?.Invoke(EventType.scriptCmd, "ROLLBACK", 0);
+          Action?.Invoke(EventType.scriptCmd, "ROLLBACK"
+            , 0, command.DebugInfo);
           Rollback();
           break;
         case SqlScriptCmdType.setPlaceholder:
@@ -334,8 +374,9 @@ namespace Fahbing.Sql
           break;
         case SqlScriptCmdType.sql:
           if (!Connection.HasTransaction())
-            Action?.Invoke(EventType.warning
-                         , "No transaction is currently active.", 0);
+            Action?.Invoke(EventType.comment
+                         , "info: No transaction is currently active."
+                         , 0, command.DebugInfo);
 
           Connection.ExecSql(sql);
 
@@ -356,12 +397,13 @@ namespace Fahbing.Sql
           break;
         case SqlScriptCmdType.setTimeout:
           var timeout = (int)command.CmdParams[0];
-          Action?.Invoke(EventType.scriptCmd, $"SET TIMEOUT {timeout}", 0);
-
+          
+          Action?.Invoke(EventType.scriptCmd, $"SET TIMEOUT {timeout}"
+            , 0, command.DebugInfo);
           Connection.SetTimeout(timeout);
-
           Action?.Invoke(EventType.comment
-            , $"command timeout changed to {Connection.GetTimeout()}", 0);
+            , $"command timeout changed to {Connection.GetTimeout()}"
+            , 0, command.DebugInfo);
           break;
         case SqlScriptCmdType.startTransaction:
           StartTransaction();
@@ -436,10 +478,13 @@ namespace Fahbing.Sql
     /// <param name="path">A file system path to the directory.</param>
     /// <param name="action">A <see cref="LoadAction"/> delegate function, 
     /// e.B. for progress indicators.</param>
+    /// <param name="debug">Specifies whether debug information should be 
+    /// stored.</param>
     public void LoadFromDirectory(string path
-                                , LoadAction action = null)
+                                , LoadAction action = null
+                                , bool debug = false)
     {
-      ScriptCmds.LoadFromDirectory(path, action);
+      ScriptCmds.LoadFromDirectory(path, action, debug);
     }
 
     /// <summary>
@@ -531,8 +576,9 @@ namespace Fahbing.Sql
     }
 
     /// <summary>
-    /// Disables transaction mode. When a transaction is active, a rollback is 
-    /// performed. A warning is issued for the following SQL commands.
+    /// Disables the transaction mode. When a transaction is active, a rollback 
+    /// is performed. A info message "No transaction is currently active" is 
+    /// issued for the following SQL commands.
     /// </summary>
     private void StopTransaction()
     {

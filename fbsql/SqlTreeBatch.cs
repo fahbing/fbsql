@@ -8,7 +8,7 @@ using System.Xml.Linq;
 
 /// 2006-07-05 - created
 /// 2015-02-07 - porting to c#
-/// 2021-12-14 - .NET Standard 2.0
+/// 2021-12-14 - adaptations for .NET Standard 2.0
 
 namespace Fahbing.Sql
 {
@@ -318,9 +318,12 @@ namespace Fahbing.Sql
     /// <param name="path">A file system path to the directory.</param>
     /// <param name="action">A <see cref="LoadAction"/> delegate function, 
     /// e.g. for progress indicators.</param>
-    /// <created>2015-02-07</created><modified>2021-12-15</modified>
+    /// <param name="debug">Specifies whether debug information should be 
+    /// stored.</param>
+    /// <created>2015-02-07</created><modified>2022-08-19</modified>
     public override void LoadFromDirectory(string path
-                                         , LoadAction action = null)
+                                         , LoadAction action = null
+                                         , bool debug = false)
     {
       path = IncludeTrailingPathDelimiter(path);
 
@@ -355,15 +358,12 @@ namespace Fahbing.Sql
         {
           if (!(new DirectoryInfo(name)).Name.StartsWith("."))
           {
-            new SqlTreeBatch(this).LoadFromDirectory(name, action);
+            new SqlTreeBatch(this).LoadFromDirectory(name, action, debug);
           }
         }
         else
         {
-          if (File.Exists(name))
-          {
-            new SqlTreeStep(this).LoadFromDirectory(name, action);
-          }
+          new SqlTreeStep(this).LoadFromDirectory(name, action, debug);
         }
       }
     }

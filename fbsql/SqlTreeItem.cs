@@ -6,7 +6,7 @@ using System.Xml.Linq;
 
 /// 2006-07-05 - created
 /// 2015-02-07 - porting to c#
-/// 2021-12-14 - .NET Standard 2.0
+/// 2021-12-14 - adaptations for .NET Standard 2.0
 
 namespace Fahbing.Sql
 {
@@ -181,9 +181,12 @@ namespace Fahbing.Sql
     /// <param name="path">A file system path to a file or directory</param>
     /// <param name="action">A <see cref="LoadAction"/> delegate function, 
     /// e.g. for progress indicators.</param>
+    /// <param name="debug">Specifies whether debug information should be 
+    /// stored.</param>
     /// <created>2015-02-08</created><modified>2021-12-11</modified>
     public abstract void LoadFromDirectory(string path
-                                         , LoadAction action = null);
+                                         , LoadAction action = null
+                                         , bool debug = false);
 
     /// <summary>
     /// Replaces any characters not allowed for a file name in a string with 
@@ -203,11 +206,11 @@ namespace Fahbing.Sql
     /// <summary>
     /// Resets the storable properties to the default values.
     /// </summary>
-    /// <created>2015-02-08</created><modified>2015-02-08</modified>
+    /// <created>2015-02-08</created><modified>2022-08-19</modified>
     public virtual void Reset()
     {
-      this.Title = "";
-      this.Executable = true;
+      Title = "";
+      Executable = true;
     }
 
     /// <summary>

@@ -70,6 +70,9 @@ namespace Fahbing
     private static readonly ConsoleColor[] ArgumentColor
       = { ConsoleColor.Black, ConsoleColor.Cyan };
 
+    /// <summary></summary>
+    private static DebugInfo CmdDebugInfo;
+
     /// <summary>The command line argumants in a <see cref="CommandLineArgs"/>
     /// variable.</summary>
     private static CommandLineArgs Arguments;
@@ -106,7 +109,7 @@ namespace Fahbing
 
     /// <summary>Color configuration for warnings.</summary>
     private static readonly ConsoleColor[] WarningColor
-      = { ConsoleColor.Black, ConsoleColor.DarkRed };
+      = { ConsoleColor.Black, ConsoleColor.DarkYellow };
 
 
     /// <summary>
@@ -169,8 +172,16 @@ namespace Fahbing
       return Encoding.Unicode.GetString(userData);
     }
 
-    private static void EncryptEnteredString(string configFile, 
-                                             string configJPath, 
+    /// <summary>
+    /// Takes repeated inputs of a string and stores it encrypted as 
+    /// placeholder value in the specified configuration file.
+    /// </summary>
+    /// <param name="configFile">The path of the configuration file.</param>
+    /// <param name="configJPath">A Json path to the config section in the 
+    /// configuration file.</param>
+    /// <param name="placeholderName">The placeholder name.</param>
+    private static void EncryptEnteredString(string configFile,
+                                             string configJPath,
                                              string placeholderName)
     {
       while (true)
@@ -364,9 +375,11 @@ namespace Fahbing
     /// value. Used in <see cref="EventType.cmdStart" />, <see 
     /// cref="EventType.cmdEnd" />,<see cref="EventType.scriptStart" /> and 
     /// <see cref="EventType.scriptCmd" />.</param>
+    /// <param name="sourcePath"></param>
     private static void HandlePlayerAction(EventType type,
                                            string text,
-                                           long value)
+                                           long value,
+                                           DebugInfo debugInfo = null)
     {
       switch (type)
       {
@@ -382,6 +395,8 @@ namespace Fahbing
           }
           break;
         case EventType.cmdStart:
+          CmdDebugInfo = debugInfo;
+
           WriteTreePath("cmd", "#" + (++value).ToString().PadLeft(3, '0')
                       , Arguments.LogFile);
           WriteCommand(text, Arguments.LogFile, Arguments.ReducedOutput);
@@ -398,6 +413,12 @@ namespace Fahbing
           break;
         case EventType.exception:
           WriteError(text, Arguments.LogFile);
+
+          if (CmdDebugInfo?.SourcePath != null)
+            WriteError($"on {new Uri(CmdDebugInfo.SourcePath).AbsoluteUri}"
+              + (CmdDebugInfo.Line > 0 ? $" - {CmdDebugInfo.Line}:1" : "")
+              , Arguments.LogFile);
+
           break;
         case EventType.message:
           WriteMessage(text, Arguments.LogFile, Arguments.ReducedOutput);
@@ -475,7 +496,7 @@ namespace Fahbing
       Console.WriteLine();
       Console.WriteLine(new string('-', 80));
     }
-   
+
     /// <summary>
     /// Deletes the log file if it already exists.
     /// </summary>
@@ -524,7 +545,7 @@ namespace Fahbing
           {
             Console.CursorVisible = true;
           }
-        });
+        }, true);
 
         Console.SetCursorPosition(0, Console.CursorTop);
       }
@@ -622,8 +643,8 @@ namespace Fahbing
       Console.ForegroundColor = StandardColor[1];
     }
 
-    private static bool SavePlaceholderValue(string configFile, 
-                                             string configJPath, 
+    private static bool SavePlaceholderValue(string configFile,
+                                             string configJPath,
                                              string placeholderName,
                                              string value,
                                              bool encrypted)
@@ -662,7 +683,9 @@ namespace Fahbing
           File.WriteAllText(configFile, config.ToString(Newtonsoft.Json.Formatting.Indented));
 
           return true;
-        } catch (Exception exception) {
+        }
+        catch (Exception exception)
+        {
           WriteError(exception.Message);
         }
       }
@@ -832,7 +855,7 @@ namespace Fahbing
     {
       lock (LockObject)
       {
-        value = $"-- {value.Replace("\n", "\n-- ")}";
+        value = $"-- error: {value.Replace("\n", "\n-- ")}";
 
         Write(value, ErrorColor);
         ResetColors();
@@ -1042,7 +1065,7 @@ namespace Fahbing
               Console.WriteLine("...");
             }
 
-            scriptPlayer.MonInterval = Arguments.MonInterval;
+            scriptPlayer.MonitorInterval = Arguments.MonInterval;
 
             scriptPlayer.Exec();
 
