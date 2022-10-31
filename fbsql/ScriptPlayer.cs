@@ -243,7 +243,7 @@ namespace Fahbing.Sql
     /// </summary>
     public void Exec()
     {
-      ExitCode = -1;
+      ExitCode = 1;
       int count = 0;
       bool monitoring = MonitorInterval > 0;
       Stopwatch cmdWatch = new();
