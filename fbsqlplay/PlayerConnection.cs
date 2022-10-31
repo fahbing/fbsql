@@ -16,11 +16,15 @@ namespace Fahbing.Sql
   /// </summary>
   internal class PlayerConnection : SqlScriptConnection
   {
+    private const string ResNoConnection = "No connection is active.";
+    private const string ResNoTransaction = "No transaction is active.";
+    private const string ResProviderError = "Unknown or not supported provider name";
+    private const string ResServerSideRollback = "The transaction was terminated on the server side. Check if the rollback was done properly!";
+
     private DbCommand Command;
     private DbConnection Connection;
     private int Timeout = 0;
     private DbTransaction Transaction;
-
 
     /// <summary>
     /// Starts a new transaction.
@@ -42,7 +46,7 @@ namespace Fahbing.Sql
     public override void Commit()
     {
       if (Transaction == null)
-        throw new ApplicationException("No transaction is active.");
+        throw new ApplicationException(ResNoTransaction);
 
       Command.CommandText = "COMMIT";
       Command.CommandTimeout = Timeout;
@@ -69,13 +73,15 @@ namespace Fahbing.Sql
         "sqloledb.1" or "system.data.sqlclient" => new SqlConnection(),
         "msdasql.1" or "system.data.oledb" => new OleDbConnection(),
         _ => throw new ApplicationException(
-          $"Unknown or not supported provider name {parameters[0]}"),
+          $"{ResProviderError} {parameters[0]}"),
       };
 
       if (Connection is SqlConnection connection)
       {
-        SqlConnectionStringBuilder builder = new(parameters[1]);
-        builder.ApplicationName = "FBSQL Command Line Script Player";
+        SqlConnectionStringBuilder builder = new(parameters[1])
+        {
+          ApplicationName = "FBSQL Command Line Script Player"
+        };
         Connection.ConnectionString = builder.ConnectionString;
 
         connection.InfoMessage += (object sender
@@ -139,7 +145,7 @@ namespace Fahbing.Sql
     public override void ExecSql(string sql)
     {
       if (Command == null)
-        throw new ApplicationException("No connection is active.");
+        throw new ApplicationException(ResNoConnection);
 
       Command.CommandText = sql;
       Command.CommandTimeout = Timeout;
@@ -226,11 +232,14 @@ namespace Fahbing.Sql
     public override void Rollback()
     {
       if (Transaction == null)
-        throw new ApplicationException("No transaction is active.");
+        throw new ApplicationException(ResNoTransaction);
 
       Command.CommandText = "ROLLBACK";
       Command.CommandTimeout = Timeout;
       Command.Transaction = Transaction;
+      
+      if (Connection is SqlConnection)
+        Command.CommandText = $"IF @@TRANCOUNT > 0 ROLLBACK ELSE THROW 50000, N'{ResServerSideRollback}', 1";
 
       Command.ExecuteNonQuery();
       //Transaction.Rollback();
