@@ -90,7 +90,7 @@ namespace Fahbing
       = { ConsoleColor.DarkRed, ConsoleColor.Gray };
 
     /// <summary>Stores the current exit code for this program.</summary>
-    private static int ExitCode = -1;
+    private static int ExitCode = 1;
 
     /// <summary>A dedicated object for setting up thread locks.</summary>
     static private readonly object LockObject = new();
@@ -142,7 +142,7 @@ namespace Fahbing
             Log(logFileName, $"load step:  {path}");
           }
         });
-
+        
         Console.WriteLine($"\nwrite script to  {destFile}.");
         Log(logFileName, $"\nwrite script to  {destFile}.");
 
@@ -150,6 +150,8 @@ namespace Fahbing
 
         Console.WriteLine("\nfinish");
         Log(logFileName, "\nfinish");
+
+        ExitCode = 0;
       }
       catch (Exception exception)
       {
@@ -1056,8 +1058,6 @@ namespace Fahbing
       {
         BuildFile(Arguments.ScriptFile, Arguments.BuildFile
                 , Arguments.LogFile);
-
-        ExitCode = 0;
       }
       else
       {
