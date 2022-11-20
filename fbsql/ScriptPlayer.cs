@@ -1,7 +1,6 @@
 ﻿using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
-using System.Data.Common;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
@@ -254,10 +253,13 @@ namespace Fahbing.Sql
     }
 
     /// <summary>
-    /// 
+    /// Checks whether <see cref="DisabledBatch"/> is a parent batch for the 
+    /// passed <see cref="SqlTreeItem" /> instance.
     /// </summary>
-    /// <param name="item"></param>
-    /// <returns></returns>
+    /// <param name="item">The <see cref="SqlTreeItem"/> instance to check.
+    /// </param>
+    /// <returns><see langword="true"/> is <see cref="DisabledBatch"/> a 
+    /// parent node, <see langword="false"/> otherwise.</returns>
     private bool IsBatchDisabledForItem(SqlTreeItem item)
     {
       if (DisabledBatch != null && item.HasParent(DisabledBatch))
@@ -689,7 +691,6 @@ namespace Fahbing.Sql
 
       Action?.Invoke(EventType.tranStopped, "", 0);
     }
-
   }
 
 }
