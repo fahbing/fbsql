@@ -38,14 +38,18 @@ namespace Fahbing.Sql
     step
   }
 
-
   /// <summary>
   /// The base class for <see cref="SqlTreeStep"/>, <see cref="SqlTreeBatch"/> 
   /// and <see cref="SqlTree"/>.
   /// </summary>    
-  /// <created>2006-07-05</created><modified>2018-03-10</modified>
+  /// <created>2006-07-05</created><modified>2022-11-19</modified>
   public abstract class SqlTreeItem : ICloneable
   {
+    /// <summary>
+    /// A compatibility level condition.
+    /// </summary>
+    public SqlCompLevelCondition CompLevelCondition { get; set; }
+
     /// <summary>
     /// Indicates whether the item should be executed, if the script is 
     /// executed.
@@ -99,9 +103,26 @@ namespace Fahbing.Sql
     /// instance, which should be interpreted as Boolean.</param>
     /// <returns>The value of the attribute interpreted as Boolean.</returns>
     /// <created>2015-07-11</created><changed>2022-05-26</changed>
-    protected bool GetBooleanFromXAttribute(XAttribute attr)
+    protected bool GetBooleanFromXAttr(XAttribute attr)
     {
       return attr != null && Convert.ToBoolean(attr.Value);
+    }
+
+    /// <summary>
+    /// Returns the value of an XML attribute as <see cref="CompLevelCondition"
+    /// /> instance.
+    /// </summary>
+    /// <returns>The value of the attribute interpreted as compatibility level 
+    /// condition.</returns>
+    /// <returns>The value of the attribute interpreted as <see cref=
+    /// "CompLevelCondition" /> instance.</returns>
+    /// <created>2022-11-19</created><changed>2022-11-19</changed>
+    protected SqlCompLevelCondition GetCompLevelCondFromXAttr(XAttribute attr)
+    {
+      if (attr != null)
+        return new SqlCompLevelCondition(attr.Value.ToString());
+
+      return null;
     }
 
     /// <summary>
@@ -132,7 +153,7 @@ namespace Fahbing.Sql
     /// <param name="attr"></param>
     /// <returns>The value as a <see cref="string"/></returns>
     /// <created>2015-07-11</created><changed>2022-05-26</changed>
-    protected string GetStringFromXAttribute(XAttribute attr)
+    protected string GetStringFromXAttr(XAttribute attr)
     {
       return attr != null ? attr.Value : "";
     }
@@ -160,6 +181,20 @@ namespace Fahbing.Sql
 
       return path;
     }
+
+    /// <summary>
+    /// Checks whether the passed <see cref="SqlTreeBatch" /> is a parent node.
+    /// </summary>
+    /// <param name="parent">The <see cref="SqlTreeBatch" /> instance to check.
+    /// </param>
+    /// <returns><see langword="true"/> if the checking <see 
+    /// cref="SqlTreeBatch" /> is a parent node, <see langword="false"/> 
+    /// otherwise.</returns>
+    public bool HasParent(SqlTreeBatch parent) 
+    {
+      return Parent != null && (Parent == parent || Parent.HasParent(parent));
+    }
+
 
     /// <summary>
     /// Ensures that a path ended with a directory separator.
@@ -206,11 +241,12 @@ namespace Fahbing.Sql
     /// <summary>
     /// Resets the storable properties to the default values.
     /// </summary>
-    /// <created>2015-02-08</created><modified>2022-08-19</modified>
+    /// <created>2015-02-08</created><modified>2022-11-19</modified>
     public virtual void Reset()
     {
       Title = "";
       Executable = true;
+      CompLevelCondition = null;
     }
 
     /// <summary>

@@ -1,6 +1,7 @@
 ﻿using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
@@ -35,7 +36,6 @@ namespace Fahbing.Sql
                                  , string text
                                  , long value
                                  , DebugInfo debugInfo = null);
-
 
   /// <summary>
   /// Defines the various types of events for the <see cref="ScriptPlayer"/>.
@@ -100,12 +100,27 @@ namespace Fahbing.Sql
       public string Value { get; set; }
     }
 
+    private const string cResBatchCompLevelCondDisabled
+      = "The batch was disabled by a compatibility level condition: ";
+    private const string cResBatchCompLevelCondEnabled
+      = "The batch was enabled by a compatibility level condition: ";
+    private const string cResStepCompLevelCondDisabled 
+      = "The step was disabled by a compatibility level condition: ";
+    private const string cResStepCompLevelCondEnabled
+      = "The step was enabled by a compatibility level condition: ";
+
     /// <summary>Stores the delegate to handle the script player eevents.
     /// </summary>
     private readonly EventAction Action;
 
     /// <summary>Stores the delegate to decrypt strings.</summary>
     private readonly DecryptFunc DecryptString;
+
+    /// <summary></summary>
+    private SqlTreeBatch DisabledBatch;
+
+    /// <summary></summary>
+    private SqlTreeItem DisabledStep;
 
     /// <summary>Stores the <see cref="SqlScriptConnection"/> instance:
     /// </summary>
@@ -239,11 +254,29 @@ namespace Fahbing.Sql
     }
 
     /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="item"></param>
+    /// <returns></returns>
+    private bool IsBatchDisabledForItem(SqlTreeItem item)
+    {
+      if (DisabledBatch != null && item.HasParent(DisabledBatch))
+        return true;
+      else
+        DisabledBatch = null;
+
+      return false;
+    }
+
+    /// <summary>
     /// Executes the loaded script.
     /// </summary>
     public void Exec()
     {
       ExitCode = 1;
+      DisabledBatch = null;
+      DisabledStep = null;
+
       int count = 0;
       bool monitoring = MonitorInterval > 0;
       Stopwatch cmdWatch = new();
@@ -279,26 +312,74 @@ namespace Fahbing.Sql
             switch (item.ItemType)
             {
               case SqlTreeItemType.batch:
-                Action?.Invoke(EventType.newBatch, item.GetPath(), 0);
+                {
+                  if (IsBatchDisabledForItem(item))
+                    break;
+
+                  Action?.Invoke(EventType.newBatch, item.GetPath(), 0);
+
+                  if (item.CompLevelCondition != null)
+                  {
+                    if (!item.CompLevelCondition.Compare(Connection.GetCompatibilityLevel()))
+                    {
+                      DisabledBatch = item as SqlTreeBatch;
+                      Action?.Invoke(EventType.comment
+                            , $"{cResBatchCompLevelCondDisabled}{item.CompLevelCondition}", 0);
+                      break;
+                    }
+                    else
+                      Action?.Invoke(EventType.comment
+                            , $"{cResBatchCompLevelCondEnabled}{item.CompLevelCondition}", 0);
+                  }
+                }
                 break;
               case SqlTreeItemType.step:
-                if (index == 0)
-                  Action?.Invoke(EventType.newStep, item.GetPath(), 0);
-
-                cmdWatch.Restart();
-
-                try
                 {
-                  ExecCommand(command, index);
-                }
-                finally
-                {
-                  cmdWatch.Stop();
+                  if (IsBatchDisabledForItem(item))
+                    break;
 
-                  Action?.Invoke(EventType.cmdEnd, cmdWatch.Elapsed.ToString()
-                    + $", total: {scriptWatch.Elapsed.ToString()}"
-                    + $", {DateTime.Now.ToString("o")}"
-                    , cmdWatch.ElapsedMilliseconds);
+                  if (index == 0)
+                  {
+                    DisabledStep = null;
+
+                    Action?.Invoke(EventType.newStep, item.GetPath(), 0);
+
+                    if (item.CompLevelCondition != null)
+                    {
+                      if (!item.CompLevelCondition.Compare(Connection.GetCompatibilityLevel()))
+                      {
+                        DisabledStep = item;
+
+                        Action?.Invoke(EventType.comment
+                              , $"{cResStepCompLevelCondDisabled}{item.CompLevelCondition}", 0);
+                        break;
+                      } 
+                      else
+                        Action?.Invoke(EventType.comment
+                              , $"{cResStepCompLevelCondEnabled}{item.CompLevelCondition}", 0);
+                    }
+                  }
+                  else
+                  {
+                    if (DisabledStep != null)
+                      break;
+                  }
+
+                  cmdWatch.Restart();
+
+                  try
+                  {
+                    ExecCommand(command, index);
+                  }
+                  finally
+                  {
+                    cmdWatch.Stop();
+
+                    Action?.Invoke(EventType.cmdEnd, cmdWatch.Elapsed.ToString()
+                      + $", total: {scriptWatch.Elapsed}"
+                      + $", {DateTime.Now.ToString("o")}"
+                      , cmdWatch.ElapsedMilliseconds);
+                  }
                 }
                 break;
               default:
@@ -313,7 +394,8 @@ namespace Fahbing.Sql
         }
         catch (Exception exception)
         {
-          Action?.Invoke(EventType.exception, exception.Message, 0);
+          Action?.Invoke(EventType.exception
+                       , GetExceptionMessage(exception), 0);
         }
       }
       finally
@@ -324,6 +406,17 @@ namespace Fahbing.Sql
         scriptWatch.Stop();
         Action?.Invoke(EventType.scriptEnd, scriptWatch.Elapsed.ToString(), 1);
       }
+    }
+
+    /// <summary>
+    /// Gets the message of an exception for all of its inner exceptions.
+    /// </summary>
+    /// <param name="exception">The esception  instance.</param>
+    /// <returns>The messages concatenated by newlines.</returns>
+    private string GetExceptionMessage(Exception exception)
+    {
+      return exception.Message + (exception.InnerException != null
+           ? "\n" + GetExceptionMessage(exception.InnerException) : "");
     }
 
     /// <summary>
@@ -596,6 +689,7 @@ namespace Fahbing.Sql
 
       Action?.Invoke(EventType.tranStopped, "", 0);
     }
+
   }
 
 }

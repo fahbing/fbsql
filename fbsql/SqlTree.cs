@@ -238,7 +238,7 @@ namespace Fahbing.Sql
     /// <created>2021-12-29</created><modified>2022-05-26</modified>
     private void SetScriptPropsFromXElement(XElement element)
     {
-      string langStr = GetStringFromXAttribute(element.Attribute("sqlLanguage"));
+      string langStr = GetStringFromXAttr(element.Attribute("sqlLanguage"));
 
       Language = Enum.TryParse(langStr, out SqlLanguage language) 
                ? language : SqlLanguage.TSQL;

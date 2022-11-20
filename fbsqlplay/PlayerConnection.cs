@@ -16,6 +16,7 @@ namespace Fahbing.Sql
   /// </summary>
   internal class PlayerConnection : SqlScriptConnection
   {
+    private const string ResErrCompLevel = "An error occurred while determining the compatibility level.";
     private const string ResNoConnection = "No connection is active.";
     private const string ResNoTransaction = "No transaction is active.";
     private const string ResProviderError = "Unknown or not supported provider name";
@@ -152,6 +153,29 @@ namespace Fahbing.Sql
       Command.Transaction = Transaction;
 
       Command.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Return the compatibilty level for a MS SQL Server.
+    /// </summary>
+    /// <returns>The compatibilty level of the current database.</returns>
+    /// <exception cref="ApplicationException"></exception>
+    public override int GetCompatibilityLevel()
+    {
+      try
+      {
+        if (Command == null)
+          throw new ApplicationException(ResNoConnection);
+
+        Command.CommandText = "SELECT CONVERT(INT, [compatibility_level]) "
+          + "FROM sys.databases WHERE name = DB_NAME()";
+        Command.CommandTimeout = Timeout;
+        Command.Transaction = Transaction;
+
+        return (int)Command.ExecuteScalar();
+      } catch (Exception exception) {
+        throw new ApplicationException(ResErrCompLevel, exception);
+      }
     }
 
     /// <summary>

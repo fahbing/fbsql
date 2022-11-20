@@ -93,6 +93,16 @@ namespace Fahbing.Sql
     public abstract void ExecSql(string sql);
 
     /// <summary>
+    /// Return the compatibilty level for a MS SQL Server.
+    /// </summary>
+    /// <returns>The compatibilty level of the current database.</returns>
+    /// <exception cref="NotImplementedException"></exception>
+    public virtual int GetCompatibilityLevel() 
+    { 
+      throw new NotImplementedException(); 
+    }
+
+    /// <summary>
     /// Returns the current value in seconds of the timeout for a SQL command. 
     /// A value of 0 means that the timeout is disabled.
     /// </summary>

@@ -34,6 +34,9 @@ namespace Fahbing.Sql
     /// </summary>
     public int Count => Items.Count;
 
+    /// <summary>
+    /// Contains the child batch and step nodes.
+    /// </summary>
     protected List<SqlTreeItem> Items { get; private set; }
 
     /// <summary>
@@ -266,22 +269,39 @@ namespace Fahbing.Sql
     }
 
     /// <summary>
+    /// Gets the directory name as title.
+    /// </summary>
+    /// <param name="fileName">A file system path to the batch  directory.</param>
+    /// <returns>The directory name as title.</returns>
+    /// <created>2015-02-08</created><modified>2022-11-20</modified>
+    private string GetTitleFromPath(string path)
+    {
+      string result = Path.GetFileName(Path.GetDirectoryName(path));
+
+      return Regex.IsMatch(result, "^\\d{4}-") ? result.Substring(5) : result;
+    }
+
+    /// <summary>
     /// Gets the defintion of this item as an <see cref="XElement"/>.
     /// </summary>
     /// <returns></returns>
-    /// <created>2015-02-07</created><modified>2021-12-29</modified>
+    /// <created>2015-02-07</created><modified>2022-11-20</modified>
     public override XElement GetXElement()
     {
-      XElement xBatch = new("batch", new XAttribute("name", Title)
+      XElement result = new("batch", new XAttribute("name", Title)
                           , new XAttribute("executable"
                                          , Executable.ToString().ToLower())
                           , new XAttribute("expanded"
                                          , Expanded.ToString().ToLower()));
 
-      foreach (SqlTreeItem item in this)
-        xBatch.Add(item.GetXElement());
+      if (CompLevelCondition != null)
+        result.Add(new XAttribute("tsql_compLevel"
+                 , CompLevelCondition.ToString()));
 
-      return xBatch;
+      foreach (SqlTreeItem item in this)
+        result.Add(item.GetXElement());
+
+      return result;
     }
 
     /// <summary>
@@ -290,14 +310,15 @@ namespace Fahbing.Sql
     /// </summary>
     /// <param name="batch">An <see cref="XElement"/> instance that contains 
     /// the definition of the <see cref="SqlTreeBatch"/>.</param>
-    /// <created>2015-02-07</created><modified>2022-05-26</modified>
+    /// <created>2015-02-07</created><modified>2022-11-19</modified>
     protected void LoadFromXElement(XElement batch)
     {
       base.Reset();
 
-      Title = GetStringFromXAttribute(batch.Attribute("name"));
-      Executable = GetBooleanFromXAttribute(batch.Attribute("executable"));
-      Expanded = GetBooleanFromXAttribute(batch.Attribute("expanded"));
+      Title = GetStringFromXAttr(batch.Attribute("name"));
+      Executable = GetBooleanFromXAttr(batch.Attribute("executable"));
+      Expanded = GetBooleanFromXAttr(batch.Attribute("expanded"));
+      CompLevelCondition = GetCompLevelCondFromXAttr(batch.Attribute("tsql_compLevel"));
 
       foreach (XElement item in batch.Elements())
       {
@@ -320,7 +341,7 @@ namespace Fahbing.Sql
     /// e.g. for progress indicators.</param>
     /// <param name="debug">Specifies whether debug information should be 
     /// stored.</param>
-    /// <created>2015-02-07</created><modified>2022-08-19</modified>
+    /// <created>2015-02-07</created><modified>2022-11-01</modified>
     public override void LoadFromDirectory(string path
                                          , LoadAction action = null
                                          , bool debug = false)
@@ -334,14 +355,16 @@ namespace Fahbing.Sql
         int index = ExcludeTrailingPathDelimiter(path)
                    .LastIndexOf(Path.DirectorySeparatorChar);
         Expanded = true;
-        Title = path.Substring(index + 1, path.Length - (index + 2));
-
-        if (Regex.IsMatch(Title, "^\\d{4}-"))
-          Title = Title.Substring(5);
+        Title = GetTitleFromPath(path);
       }
       else
+      {
         LoadFromXElement(XDocument.Load(Path.Combine(path, "__batch.xml"))
                         .Element("batch"));
+
+        if (string.IsNullOrEmpty(Title))
+          Title = GetTitleFromPath(path);
+      }
 
       string[] directories = Directory.GetDirectories(path);
       string[] files = Directory.GetFiles(path, "*.sql");
@@ -356,14 +379,17 @@ namespace Fahbing.Sql
       {
         if (Directory.Exists(name))
         {
-          if (!(new DirectoryInfo(name)).Name.StartsWith("."))
+          if (!Regex.IsMatch((new DirectoryInfo(name)).Name, "^[._]"))
           {
             new SqlTreeBatch(this).LoadFromDirectory(name, action, debug);
           }
         }
         else
         {
-          new SqlTreeStep(this).LoadFromDirectory(name, action, debug);
+          if (!Regex.IsMatch((new FileInfo(name)).Name, "^[._]"))
+          {
+            new SqlTreeStep(this).LoadFromDirectory(name, action, debug);
+          }
         }
       }
     }

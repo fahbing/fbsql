@@ -14,7 +14,7 @@ namespace Fahbing.Sql
   /// <summary>
   /// Represents one or more SQL commands.
   /// </summary>
-  /// <created>2006-07-05</created><changed>2022-08-19</changed>
+  /// <created>2006-07-05</created><changed>2022-11-20</changed>
   public class SqlTreeStep : SqlTreeItem
   {
     /// <summary>Gets or sets the source file name as debug information.
@@ -48,13 +48,14 @@ namespace Fahbing.Sql
     /// instance.</param>
     /// <param name="parent">The parent <see cref="SqlTreeBatch"/> instance.
     /// </param>
-    /// <created>2006-07-05</created><changed>2021-12-29</changed>
+    /// <created>2006-07-05</created><changed>2022-11-19</changed>
     public SqlTreeStep(XElement step,
                        SqlTreeBatch parent)
       : this(parent)
     {
-      Title = GetStringFromXAttribute(step.Attribute("name"));
-      Executable = GetBooleanFromXAttribute(step.Attribute("executable"));
+      Title = GetStringFromXAttr(step.Attribute("name"));
+      Executable = GetBooleanFromXAttr(step.Attribute("executable"));
+      CompLevelCondition = GetCompLevelCondFromXAttr(step.Attribute("tsql_compLevel"));
       Sql = step.Value;
     }
 
@@ -107,13 +108,19 @@ namespace Fahbing.Sql
     /// </summary>
     /// <returns>An <see cref="XElement"/> that represents the definition of 
     /// this step.</returns>
-    /// <created>2015-02-07</created><changed>2022-05-26</changed>
+    /// <created>2015-02-07</created><changed>2022-11-20</changed>
     public override XElement GetXElement()
     {
-      return new XElement("step", new XAttribute("name", Title)
-                        , new XAttribute("executable"
-                            , Executable.ToString().ToLower())
-                        , new XText(Sql ?? ""));
+      XElement result = new("step", new XAttribute("name", Title)
+                          , new XAttribute("executable"
+                          , Executable.ToString().ToLower())
+                          , new XText(Sql ?? ""));
+
+      if (CompLevelCondition != null)
+        result.Add(new XAttribute("tsql_compLevel"
+                 , CompLevelCondition.ToString()));
+      
+      return result;
     }
 
     /// <summary>
@@ -122,11 +129,12 @@ namespace Fahbing.Sql
     /// </summary>
     /// <param name="step">An <see cref="XElement"/> instance that contains 
     /// the definition of the <see cref="SqlTreeStep"/>.</param>
-    /// <created>2015-02-08</created><changed>2022-08-19</changed>
+    /// <created>2015-02-08</created><changed>2022-11-19</changed>
     protected void LoadFromXElement(XElement step)
     {
-      Title = GetStringFromXAttribute(step.Attribute("name"));
-      Executable = GetBooleanFromXAttribute(step.Attribute("executable"));
+      Title = GetStringFromXAttr(step.Attribute("name"));
+      Executable = GetBooleanFromXAttr(step.Attribute("executable"));
+      CompLevelCondition = GetCompLevelCondFromXAttr(step.Attribute("tsql_compLevel"));
     }
 
     /// <summary>
@@ -137,7 +145,7 @@ namespace Fahbing.Sql
     /// e.B. for progress indicators.</param>
     /// <param name="debug">Specifies whether debug information should be 
     /// stored.</param>
-    /// <created>2015-02-08</created><modified>2022-08-20</modified>
+    /// <created>2015-02-08</created><modified>2022-11-20</modified>
     public override void LoadFromDirectory(string path
                                          , LoadAction action = null
                                          , bool debug = false)
@@ -160,6 +168,9 @@ namespace Fahbing.Sql
           {
             LoadFromXElement(XElement.Parse(regEx.Match(lines[0]).Groups[1].Value));
             offset++;
+
+            if (Title == "")
+              Title = GetTitleFromFileName(path);
           }
           else
             LoadPropsFromFileName(path);
@@ -175,6 +186,19 @@ namespace Fahbing.Sql
     }
 
     /// <summary>
+    /// Gets the file name as the title.
+    /// </summary>
+    /// <param name="fileName">A file system path to the source file.</param>
+    /// <returns>The title as string.</returns>
+    /// <created>2015-02-08</created><modified>2022-11-19</modified>
+    private string GetTitleFromFileName(string fileName)
+    {
+      string result = Path.GetFileNameWithoutExtension(fileName);
+
+      return Regex.IsMatch(result, "^\\d{4}-") ? result.Substring(5) : result;
+    }
+
+    /// <summary>
     /// Sets the file name as the title.
     /// </summary>
     /// <param name="fileName">A file system path to the source file.</param>
@@ -183,10 +207,7 @@ namespace Fahbing.Sql
     {
       Reset();
 
-      Title = Path.GetFileNameWithoutExtension(fileName);
-
-      if (Regex.IsMatch(Title, "^\\d{4}-"))
-        Title = Title.Substring(5);
+      Title = GetTitleFromFileName(fileName);
     }
 
     /// <summary>
