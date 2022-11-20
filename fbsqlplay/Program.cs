@@ -153,7 +153,7 @@ namespace Fahbing
       }
       catch (Exception exception)
       {
-        WriteError(exception.Message, logFileName);
+        WriteException(exception, logFileName);
       }
     }
 
@@ -686,7 +686,7 @@ namespace Fahbing
         }
         catch (Exception exception)
         {
-          WriteError(exception.Message);
+          WriteException(exception);
         }
       }
 
@@ -862,6 +862,21 @@ namespace Fahbing
         Console.WriteLine();
         Log(logFileName, value);
       }
+    }
+
+    /// <summary>
+    /// Writes the message of an exception and all inner exceptions in the 
+    /// output stream and the log file.
+    /// </summary>
+    /// <param name="value">The error message.</param>
+    /// <param name="logFileName">The log file name.</param>
+    private static void WriteException(Exception exception,
+                                       string logFileName = null)
+    {
+      WriteError(exception.Message, logFileName);
+
+      if (exception.InnerException != null)
+        WriteException(exception.InnerException, logFileName);
     }
 
     /// <summary>
@@ -1073,7 +1088,7 @@ namespace Fahbing
           }
           catch (Exception exception)
           {
-            WriteError(exception.Message, Arguments.LogFile);
+            WriteException(exception, Arguments.LogFile);
           }
         }
 
