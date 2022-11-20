@@ -2,7 +2,8 @@
   "profiles": {
     "fbsqlplay": {
       "commandName": "Project",
-      "commandLineArgs": "\"..\\..\\..\\test\\database.xss\" /c:\"..\\..\\..\\test\\config.json\" /l:\"..\\..\\..\\test\" /a  /?",
+      "commandLineArgs": "\"D:\\Database\\Database_resources.gpd\" /c:\"D:\\Database\\config\\FAHBING02_Scotty.json\" /p:\"$.scriptPlayer\" /a  /?",
+      "x.commandLineArgs": "\"..\\..\\..\\test\\database.xss\" /c:\"..\\..\\..\\test\\config.json\" /l:\"..\\..\\..\\test\" /a  /?",
       "build.commandLineArgs": "\"..\\..\\..\\test\\database.xss\" /b /a /s /?",
       "encrypt.commandLineArgs": "/e /c:\"..\\..\\..\\test\\config.json\" /k:\"$signCertPw$\" /?"
     }

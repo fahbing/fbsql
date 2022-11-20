@@ -1,4 +1,3 @@
--- <step name="create database" executable="true" guid="8A9363AB-C448-4C11-BE7B-6629F399DBA3" />
 
 SET TIMEOUT 0
 

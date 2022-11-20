@@ -2,6 +2,10 @@
   "placeholders": {
     "_server_": ".",
     "_instance_": "\\DEV2019",
-    "_dbName_": "ScriptTest"
+    "_dbName_": "ScriptTest",
+    "$signCertPw$": {
+      "encrypted": true,
+      "value": "AQAAANCMnd8BFdERjHoAwE/Cl+sBAAAA9KddSWlG5US1fchxcYYztwAAAAACAAAAAAAQZgAAAAEAACAAAAC5i/tE9UuW4ItepMYkLZWKIEztwSEEKiL8ovY63vvcGgAAAAAOgAAAAAIAACAAAADgm6HiQpHdUa7Ck7/AP4OgOt3M7RoxdVnQt5kuZhN8KxAAAACmKOyA4w9ffRjPZTxsLEKEQAAAAJKVl1ojS9lsoSjdLacilnz5TGEsRudVcLJL8R+V4ijwKdvjfvjbWl/4k4t7HMJElB9v1bNf+xH3TiYf88lSX1g="
+    }
   }
 }
