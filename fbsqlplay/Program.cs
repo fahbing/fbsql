@@ -415,8 +415,8 @@ namespace Fahbing
           break;
         case EventType.exception:
           WriteError(text, Arguments.LogFile);
-
-          if (CmdDebugInfo?.SourcePath != null)
+         
+          if (!string.IsNullOrEmpty(CmdDebugInfo?.SourcePath))
             WriteError($"on {new Uri(CmdDebugInfo.SourcePath).AbsoluteUri}"
               + (CmdDebugInfo.Line > 0 ? $" - {CmdDebugInfo.Line}:1" : "")
               , Arguments.LogFile);
