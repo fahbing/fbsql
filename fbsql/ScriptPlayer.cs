@@ -125,6 +125,9 @@ namespace Fahbing.Sql
     /// </summary>
     private readonly SqlScriptConnection Connection;
 
+    /// <summary></summary>
+    private Exception ConnectionException;
+
     /// <summary>The current exit code for the script.</summary>
     public int ExitCode { get; private set; }
 
@@ -205,6 +208,10 @@ namespace Fahbing.Sql
       Disconnect();
 
       MonitorConnectionString = connectionString;
+      Connection.OnException = (Exception exception) =>
+      {
+        ConnectionException = exception;
+      };
       Connection.OnMessage = (string message) =>
         {
           if (message.StartsWith("warn:"))
@@ -438,6 +445,8 @@ namespace Fahbing.Sql
       switch (command.CmdType)
       {
         case SqlScriptCmdType.comment:
+          text = ReplacePlaceholder(command.CmdParams[0]?.ToString());
+
           Action?.Invoke(EventType.comment, text, 0, command.DebugInfo);
           break;
         case SqlScriptCmdType.commit:
@@ -475,6 +484,9 @@ namespace Fahbing.Sql
 
           Connection.ExecSql(sql);
 
+          if (ConnectionException != null)
+            throw ConnectionException;
+
           if (Connection.HasTransaction())
             ++TranCmdCount;
 
@@ -507,6 +519,9 @@ namespace Fahbing.Sql
           StopTransaction();
           break;
       }
+
+      if (ConnectionException != null)
+        throw ConnectionException;
     }
 
     /// <summary>

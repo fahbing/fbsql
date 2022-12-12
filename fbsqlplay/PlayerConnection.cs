@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Data;
 using System.Data.Common;
+using System.Data.Odbc;
 using System.Data.OleDb;
 using System.Data.SqlClient;
 
@@ -10,6 +12,29 @@ using System.Data.SqlClient;
 
 namespace Fahbing.Sql
 {
+  internal class SqlException : DbException
+  {
+    public byte Class { get; private set; }
+
+    public int LineNumber { get; private set; }
+
+    public int Number { get; private set; }
+
+    public string Procedure { get; private set; }
+
+    public byte State { get; private set; }
+
+    public SqlException(SqlError error) 
+         : base(error.Message) 
+    { 
+      Class = error.Class;
+      LineNumber = error.LineNumber; 
+      Number = error.Number;
+      Procedure = error.Procedure;
+      State = error.State;
+    }
+  }
+
   /// <summary>
   /// A connection object for the <see cref="SqlScriptPlayer"/> that implements 
   /// the system.data.sqlclient and system.data.oledb connection provider.
@@ -19,7 +44,6 @@ namespace Fahbing.Sql
     private const string ResErrCompLevel = "An error occurred while determining the compatibility level.";
     private const string ResNoConnection = "No connection is active.";
     private const string ResNoTransaction = "No transaction is active.";
-    private const string ResProviderError = "Unknown or not supported provider name";
     private const string ResServerSideRollback = "The transaction was terminated on the server side. Check if the rollback was done properly!";
 
     private DbCommand Command;
@@ -49,12 +73,16 @@ namespace Fahbing.Sql
       if (Transaction == null)
         throw new ApplicationException(ResNoTransaction);
 
-      Command.CommandText = "COMMIT";
-      Command.CommandTimeout = Timeout;
-      Command.Transaction = Transaction;
+      if (Connection is SqlConnection)
+      {
+        Command.CommandText = "COMMIT";
+        Command.CommandTimeout = Timeout;
+        Command.Transaction = Transaction;
 
-      Command.ExecuteNonQuery();
-      //Transaction.Commit();
+        Command.ExecuteNonQuery();
+      }
+      else
+        Transaction.Commit();
 
       Transaction = null;
     }
@@ -69,34 +97,78 @@ namespace Fahbing.Sql
     {
       var parameters = ExtractProvider(connectionString);
 
-      Connection = (parameters[0]?.ToLower()) switch
+      Connection = (parameters[0]) switch
       {
-        "sqloledb.1" or "system.data.sqlclient" => new SqlConnection(),
-        "msdasql.1" or "system.data.oledb" => new OleDbConnection(),
-        _ => throw new ApplicationException(
-          $"{ResProviderError} {parameters[0]}"),
+        "System.Data.SqlClient" => new SqlConnection(),
+        "System.Data.Odbc" => new OdbcConnection(),
+        _ => new OleDbConnection()
       };
 
-      if (Connection is SqlConnection connection)
+      if (Connection is SqlConnection sqlConnection)
       {
         SqlConnectionStringBuilder builder = new(parameters[1])
         {
           ApplicationName = "FBSQL Command Line Script Player"
         };
         Connection.ConnectionString = builder.ConnectionString;
+        sqlConnection.FireInfoMessageEventOnUserErrors = true;
 
-        connection.InfoMessage += (object sender
+        sqlConnection.InfoMessage += (object sender
         , SqlInfoMessageEventArgs e) =>
         {
-          OnMessage?.Invoke(e.Message);
+          if (e.Errors[0].Class < 11)
+          {
+            foreach (SqlError error in e.Errors)
+            {
+              OnMessage?.Invoke(e.Message);
+            }
+          } else
+          {
+            OnException?.Invoke(CreateException(e.Errors));
+          }
         };
       }
+      else if (Connection is OdbcConnection odbcConnection)
+      {
+        OdbcConnectionStringBuilder builder = new(parameters[1]);
+        odbcConnection.ConnectionString = builder.ConnectionString;
+      }
       else
-        Connection.ConnectionString = parameters[1];
+      {
+        OleDbConnectionStringBuilder builder = new(parameters[1])
+        {
+          Provider = parameters[0]
+        };
+
+        Connection.ConnectionString = builder.ConnectionString;
+      }
 
       Connection.Open();
 
       Command = Connection.CreateCommand();
+    }
+
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="errors"></param>
+    /// <returns></returns>
+    internal static Exception CreateException(SqlErrorCollection errors) 
+    { 
+      if (errors.Count > 1)
+      {
+        var exceptions = new Collection<Exception>();
+
+        foreach (SqlError error in errors)
+        {
+          exceptions.Add(new SqlException(error));
+        }
+        return new AggregateException(exceptions);
+
+      } else
+      {
+        return new SqlException(errors[0]);
+      }
     }
 
     /// <summary>
@@ -156,29 +228,6 @@ namespace Fahbing.Sql
     }
 
     /// <summary>
-    /// Return the compatibilty level for a MS SQL Server.
-    /// </summary>
-    /// <returns>The compatibilty level of the current database.</returns>
-    /// <exception cref="ApplicationException"></exception>
-    public override int GetCompatibilityLevel()
-    {
-      try
-      {
-        if (Command == null)
-          throw new ApplicationException(ResNoConnection);
-
-        Command.CommandText = "SELECT CONVERT(INT, [compatibility_level]) "
-          + "FROM sys.databases WHERE name = DB_NAME()";
-        Command.CommandTimeout = Timeout;
-        Command.Transaction = Transaction;
-
-        return (int)Command.ExecuteScalar();
-      } catch (Exception exception) {
-        throw new ApplicationException(ResErrCompLevel, exception);
-      }
-    }
-
-    /// <summary>
     /// Separates the provider from the rest of the connection string.
     /// </summary>
     /// <param name="connectionString"></param>
@@ -200,8 +249,10 @@ namespace Fahbing.Sql
         {
           result[0] = param[1].ToLower() switch
           {
-            "sqloledb.1" or "system.data.sqlclient" => "System.Data.SqlClient",
-            "msdasql.1" or "system.data.oledb" => "System.Data.OleDb",
+            // sqloledb.1 = Microsoft OLE DB - Treiber für SQL Server, for backwards compatibility
+            "sqlclient" or "system.data.sqlclient" or "sqloledb.1" => "System.Data.SqlClient",
+            // msdasql.1 = Microsoft OLE DB provider for ODBC, for backwards compatibility
+            "odbc" or "system.data.odbc" or "msdasql.1" => "System.Data.Odbc",
             _ => param[1],
           };
         }
@@ -212,6 +263,31 @@ namespace Fahbing.Sql
       result[1] = string.Join(";", parameters);
 
       return result;
+    }
+
+    /// <summary>
+    /// Return the compatibilty level for a MS SQL Server.
+    /// </summary>
+    /// <returns>The compatibilty level of the current database.</returns>
+    /// <exception cref="ApplicationException"></exception>
+    public override int GetCompatibilityLevel()
+    {
+      try
+      {
+        if (Command == null)
+          throw new ApplicationException(ResNoConnection);
+
+        Command.CommandText = "SELECT CONVERT(INT, [compatibility_level]) "
+          + "FROM sys.databases WHERE name = DB_NAME()";
+        Command.CommandTimeout = Timeout;
+        Command.Transaction = Transaction;
+
+        return (int)Command.ExecuteScalar();
+      }
+      catch (Exception exception)
+      {
+        throw new ApplicationException(ResErrCompLevel, exception);
+      }
     }
 
     /// <summary>
@@ -258,15 +334,18 @@ namespace Fahbing.Sql
       if (Transaction == null)
         throw new ApplicationException(ResNoTransaction);
 
-      Command.CommandText = "ROLLBACK";
-      Command.CommandTimeout = Timeout;
-      Command.Transaction = Transaction;
-      
       if (Connection is SqlConnection)
+      {
+        Command.CommandText = "ROLLBACK";
+        Command.CommandTimeout = Timeout;
+        Command.Transaction = Transaction;
+
         Command.CommandText = $"IF @@TRANCOUNT > 0 ROLLBACK ELSE THROW 50000, N'{ResServerSideRollback}', 1";
 
-      Command.ExecuteNonQuery();
-      //Transaction.Rollback();
+        Command.ExecuteNonQuery();
+      }
+      else 
+        Transaction.Rollback();
 
       Transaction = null;
     }

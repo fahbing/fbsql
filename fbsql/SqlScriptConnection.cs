@@ -10,12 +10,22 @@ namespace Fahbing.Sql
   /// </summary>
   public delegate void SqlScriptConnectionMessage(string message);
 
+  /// <summary>
+  /// A delegate function to receive an exception from the database server.
+  /// </summary>
+  public delegate void SqlScriptConnectionException(Exception exception);
 
   /// <summary>
   /// An abstract connection class for the SqlScriptPlayer.
   /// </summary>
   public abstract class SqlScriptConnection : IDisposable
   {
+    /// <summary>
+    /// Gets or sets a delegate function to receive messages from the database 
+    /// server.
+    /// </summary>
+    public SqlScriptConnectionException OnException { get; set; }
+
     /// <summary>
     /// Gets or sets a delegate function to receive messages from the database 
     /// server.
