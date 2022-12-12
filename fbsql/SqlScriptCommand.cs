@@ -193,6 +193,41 @@ namespace Fahbing.Sql
     }
 
     /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="parser">A <see cref="StringParser"/> instance which 
+    /// contains the commands.</param>
+    /// <param name="commands">A reference to a <see cref="SqlScriptCommand"/> 
+    /// list.</param>
+    /// <returns>If a COMMENT command is detected, the method returns <see 
+    /// langword="true"/>, otherwise <see langword="false"/>.</returns>
+    private static bool ParseCommentCommand(StringParser parser,
+                                            ref List<SqlScriptCommand> commands)
+    {
+      if (parser.isSymbol("comment"))
+      {
+        parser.NextToken();
+
+        if (parser.TokenSubtype != ParserTokenSubtype.stringSingleQuotes)
+          parser.raiseException(ParserTokenSubtype.stringSingleQuotes);
+
+        var cmdParams = new object[1];
+        cmdParams[0] = parser.toString();
+
+        commands.Add(new SqlScriptCommand(SqlScriptCmdType.comment, cmdParams));
+        parser.NextToken();
+
+        // for backward compatibility
+        if (parser.ToString() == ";" && parser.Terminator != ";")
+          parser.NextToken();
+
+        return true;
+      }
+
+      return false;
+    }
+
+    /// <summary>
     /// Checks whether the current parser position points to a CONNECT command. 
     /// If so, it is added to the <paramref name="commands"/> as <see 
     /// cref="SqlScriptCommand"/> instance, the parser is positioned on the 
@@ -265,6 +300,8 @@ namespace Fahbing.Sql
         return true;
       }
       else if (ParseConnectCommand(parser, ref commands))
+        return true;
+      else if (ParseCommentCommand(parser, ref commands))
         return true;
 
       return false;
