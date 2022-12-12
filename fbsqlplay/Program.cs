@@ -521,40 +521,56 @@ namespace Fahbing
                                        string logFileName)
     {
       WriteAction($"load script from {scriptFileName}.", logFileName);
+      string errorPath = scriptFileName;
 
-      FileAttributes fileAttr = File.GetAttributes(scriptFileName);
-
-      if ((fileAttr & FileAttributes.Directory) == FileAttributes.Directory)
+      try
       {
-        scriptPlayer.LoadFromDirectory(scriptFileName, (type, path) =>
+        FileAttributes fileAttr = File.GetAttributes(scriptFileName);
+
+        if ((fileAttr & FileAttributes.Directory) == FileAttributes.Directory)
         {
-          if (path.Length > 65)
-            path = "..." + path.Substring(path.Length - 62, 62);
-
-          path = path.PadRight(65);
-          Console.CursorVisible = false;
-
-          try
+          scriptPlayer.LoadFromDirectory(scriptFileName, (type, path) =>
           {
-            Console.SetCursorPosition(0, Console.CursorTop);
+            errorPath = path;
 
-            if (type == SqlTreeItemType.batch)
-              Console.Write($"   load batch: {path}");
-            else
-              Console.Write($"   load step:  {path}");
-          }
-          finally
-          {
-            Console.CursorVisible = true;
-          }
-        }, true);
+            if (path.Length > 65)
+              path = "..." + path.Substring(path.Length - 62, 62);
 
-        Console.SetCursorPosition(0, Console.CursorTop);
+            path = path.PadRight(65);
+            Console.CursorVisible = false;
+
+            try
+            {
+              Console.SetCursorPosition(0, Console.CursorTop);
+
+              if (type == SqlTreeItemType.batch)
+                Console.Write($"   load batch: {path}");
+              else
+                Console.Write($"   load step:  {path}");
+            }
+            finally
+            {
+              Console.CursorVisible = true;
+            }
+          }, true);
+
+          Console.SetCursorPosition(0, Console.CursorTop);
+        }
+        else
+          scriptPlayer.LoadFromXmlFile(scriptFileName);
+
+        errorPath = null;
+
+        WriteAction($"finish".PadRight(80), logFileName);
       }
-      else
-        scriptPlayer.LoadFromXmlFile(scriptFileName);
-
-      WriteAction($"finish".PadRight(80), logFileName);
+      catch (Exception exception)
+      {
+        if (!string.IsNullOrEmpty(errorPath))
+          throw new ApplicationException($"on {new Uri(errorPath).AbsoluteUri}"
+                                       , exception);
+        else
+          throw exception;
+      }
     }
 
     /// <summary>
@@ -1068,7 +1084,8 @@ namespace Fahbing
             ScriptPlayer scriptPlayer = new(connection, HandlePlayerAction
                                           , DecryptString);
 
-            LoadScriptFile(scriptPlayer, Arguments.ScriptFile, Arguments.LogFile);
+            LoadScriptFile(scriptPlayer, Arguments.ScriptFile
+                         , Arguments.LogFile);
             LoadConfiguration(scriptPlayer, Arguments.ConfigFile
                             , Arguments.ConfigJPath, Arguments.LogFile);
 
@@ -1093,6 +1110,10 @@ namespace Fahbing
         }
 
         WriteComment($"program exit code: {ExitCode}", Arguments.LogFile);
+
+        if (!string.IsNullOrEmpty(Arguments.LogFile))
+          WriteComment($"log {new Uri(Arguments.LogFile).AbsoluteUri}", 
+            Arguments.LogFile);
 
         try
         {
